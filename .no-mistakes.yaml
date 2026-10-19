@@ -3,9 +3,11 @@
 # Gate-control settings (agent, commands, no_ci) are read by the daemon from
 # THIS file on the default branch (main), never from a pushed feature branch.
 
-# Pipeline agent. The local opencode ACP endpoint is unavailable in this
-# environment (POST /session -> 405), so the gate uses the claude CLI.
-agent: claude
+# Pipeline agent. The local opencode HTTP ACP endpoint answers 405 on
+# session creation in this environment, and the claude CLI is org-blocked
+# (subscription access disabled), so the gate runs opencode as a subprocess
+# ACP server via acpx.
+agent: acp:opencode
 
 # This repo intentionally has no CI: validation is the no-mistakes pipeline
 # itself (review/test/document/lint) plus the local pnpm checks below.
