@@ -1,0 +1,19 @@
+# no-mistakes repo configuration (ParcelTongue)
+#
+# Gate-control settings (agent, commands, no_ci) are read by the daemon from
+# THIS file on the default branch (main), never from a pushed feature branch.
+
+# Pipeline agent. The local opencode ACP endpoint is unavailable in this
+# environment (POST /session -> 405), so the gate uses the claude CLI.
+agent: claude
+
+# This repo intentionally has no CI: validation is the no-mistakes pipeline
+# itself (review/test/document/lint) plus the local pnpm checks below.
+no_ci: true
+
+commands:
+  # Run worktrees start with tracked files only; install deps before any check.
+  prepare: "pnpm install --frozen-lockfile"
+  # Targeted local validation: unit tests (no network, PRD §12) + typecheck.
+  test: "pnpm test"
+  lint: "pnpm lint && pnpm typecheck"
