@@ -1,0 +1,52 @@
+{
+  "statusCode": 200,
+  "request_id": "pt-m2-in-transit",
+  "message": "Success",
+  "data": [
+    {
+      "awb": "55540110035405",
+      "currentFlow": "Forward",
+      "currentTrackIndex": 1,
+      "hqStatus": "In Transit",
+      "deliveryDate": "26 Oct 2026, Evening",
+      "deliveryDate_v1": "26 Oct",
+      "addressInfo": { "city": "Bangalore", "pincode": "560087", "state": "Karnataka" },
+      "productType": "B2C",
+      "referenceNo": "GNPC17375",
+      "status": {
+        "status": "PICKUP",
+        "instructions": "Shipment picked up",
+        "statusDateTime": "2026-10-19T15:37:44",
+        "statusType": "UD"
+      },
+      "trackingStates": [
+        {
+          "label": "Picked Up",
+          "scans": [
+            {
+              "scan": "In Transit",
+              "scanDateTime": "2026-10-19T15:37:44",
+              "cityLocation": "Delhi",
+              "scannedLocation": "Delhi_Airport_GW (Delhi)",
+              "scanNslRemark": "Package picked up successfully.",
+              "scanType": "UD"
+            }
+          ]
+        },
+        {
+          "label": "In Transit",
+          "scans": [
+            {
+              "scan": "In Transit",
+              "scanDateTime": "2026-10-19T21:12:08",
+              "cityLocation": "Mumbai",
+              "scannedLocation": "Mumbai_Hub (Maharashtra)",
+              "scanNslRemark": "Arrived at Mumbai hub.",
+              "scanType": "UD"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

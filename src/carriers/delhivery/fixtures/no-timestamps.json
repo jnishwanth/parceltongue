@@ -1,0 +1,45 @@
+{
+  "statusCode": 200,
+  "message": "Success",
+  "data": [
+    {
+      "awb": "0000000000003",
+      "currentFlow": "Forward",
+      "currentTrackIndex": 0,
+      "hqStatus": "In Transit",
+      "deliveryDate": "21 Oct 2026, Morning",
+      "addressInfo": { "city": "Chennai", "pincode": "600017", "state": "Tamil Nadu" },
+      "productType": "B2C",
+      "referenceNo": "private-reference",
+      "status": {
+        "status": "IN_TRANSIT",
+        "instructions": "In Transit",
+        "statusDateTime": "2026-10-20T06:45:00",
+        "statusType": "UD"
+      },
+      "trackingStates": [
+        {
+          "label": "In Transit",
+          "scans": [
+            {
+              "scan": "In Transit",
+              "scanDateTime": "",
+              "cityLocation": "Hyderabad",
+              "scannedLocation": "Hyderabad_GW (Telangana)",
+              "scanNslRemark": "Out for delivery to next hub",
+              "scanType": "UD"
+            },
+            {
+              "scan": "In Transit",
+              "scanDateTime": "",
+              "cityLocation": "Hyderabad",
+              "scannedLocation": "Hyderabad_GW (Telangana)",
+              "scanNslRemark": "Duplicate feed row",
+              "scanType": "UD"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

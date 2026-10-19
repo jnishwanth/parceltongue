@@ -10,6 +10,7 @@
   "packageManager": "pnpm@11.25.0",
   "scripts": {
     "dev": "tsx src/main.ts",
+    "live": "tsx src/live.ts",
     "start": "node dist/main.js",
     "build": "tsc -p tsconfig.build.json",
     "test": "vitest run",

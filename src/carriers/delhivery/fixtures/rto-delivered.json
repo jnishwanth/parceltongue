@@ -1,0 +1,44 @@
+{
+  "statusCode": 200,
+  "message": "success",
+  "data": [
+    {
+      "awb": "0000000000002",
+      "currentFlow": "Returned",
+      "currentTrackIndex": 0,
+      "hqStatus": "Delivered",
+      "deliveryDate": "",
+      "productType": "B2C",
+      "referenceNo": "private-reference",
+      "status": {
+        "status": "DELIVERED",
+        "statusType": "RT",
+        "statusDateTime": "2026-02-10T11:30:00",
+        "instructions": "Delivered to sender"
+      },
+      "trackingStates": [
+        {
+          "label": "Out for Return",
+          "scans": [
+            {
+              "scan": "In Transit",
+              "scanDateTime": "2026-02-05T09:15:00",
+              "cityLocation": "Example City",
+              "scannedLocation": "Example_Hub (Example State)",
+              "scanNslRemark": "Departed for sender",
+              "scanType": "RT"
+            },
+            {
+              "scan": "Delivered",
+              "scanDateTime": "2026-02-10T11:30:00",
+              "cityLocation": "Example City",
+              "scannedLocation": "Example_Seller (Example State)",
+              "scanNslRemark": "Delivered to seller",
+              "scanType": "RT"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

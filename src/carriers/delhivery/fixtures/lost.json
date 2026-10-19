@@ -1,0 +1,49 @@
+{
+  "statusCode": 200,
+  "message": "success",
+  "data": [
+    {
+      "awb": "39777010000022",
+      "currentFlow": "Closed",
+      "currentTrackIndex": 0,
+      "deliveryDate": "",
+      "deliveryDate_v1": "Order Lost",
+      "deliveryPillLabel": "Lost",
+      "essential": true,
+      "hqStatus": "LOST",
+      "isDirectPTL": false,
+      "isInternational": false,
+      "isMaster": false,
+      "productType": "B2C",
+      "referenceNo": "REDACTED_REFERENCE",
+      "status": {
+        "instructions": "Shipment LOST",
+        "status": "LOST",
+        "statusDateTime": "2026-07-14T15:52:45.307000"
+      },
+      "subText": "We're sorry, we're unable to locate your package at the moment. Please contact our support team for assistance.",
+      "timelineModifications": {},
+      "trackingStates": [
+        {
+          "date": "",
+          "label": "Lost",
+          "outOfStation": true,
+          "scanDateTime": "",
+          "scans": [
+            {
+              "cityLocation": "REDACTED_CITY",
+              "scan": "LOST",
+              "scanDate": "",
+              "scanDateTime": "",
+              "scanNslRemark": "Package marked as lost",
+              "scanType": "LT",
+              "scannedLocation": "Faridabad_MathuraRoad_GW (Haryana)",
+              "setUndeliveredNsl": false,
+              "tsUpdateNsl": false
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
