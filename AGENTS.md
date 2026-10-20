@@ -56,7 +56,8 @@ src/
 - **No new runtime dependencies** without recording them in the PRD tech table
   and in this file. Personal single-process tool: fewer deps is better.
 - **Logging:** pino JSON to stdout only. No console.log in non-test code
-  (main.ts may console.error once for fatal config failures, before the logger exists).
+  (main.ts may console.error once for fatal config failures, before the
+  logger exists; the `live` smoke CLI `src/live.ts` is stdout-by-design).
 - **Tests:** vitest, colocated `*.test.ts`. Tests must never touch the network;
   Delhivery responses are covered by recorded fixtures in
   `src/carriers/delhivery/fixtures/` (M2).

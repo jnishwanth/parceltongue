@@ -10,7 +10,7 @@ Status legend: ✅ done · 🔜 in progress · ⬜ pending
 | #  | Milestone                                                                        | Status       | Done       | Evidence / notes |
 |----|----------------------------------------------------------------------------------|--------------|------------|------------------|
 | M1 | Scaffold: TS project, config, pino, lint, vitest                                 | ✅ done        | 2026-10-19 | Fresh `pnpm install` clean; typecheck+lint+9/9 tests green; `pnpm dev` boots (exits after boot log — keep-alive comes with M6); config error path exits 1 with all problems listed |
-| M2 | **Delhivery adapter: client + parse + status map + fixtures + unit tests**       | ✅ done        | 2026-10-20 | `pnpm live 55540110035405` → real endpoint returned `kind: ok` (stage in_transit, IST→UTC with ms, shallow feed as documented); bogus AWB → `notFound`/exit 1; typecheck+lint+94/94 tests green; 9 fixtures w/ provenance README |
+| M2 | **Delhivery adapter: client + parse + status map + fixtures + unit tests**       | ✅ done        | 2026-10-20 | `pnpm live 55540110035405` → real endpoint returned `kind: ok` (stage in_transit, IST→UTC with ms, shallow feed as documented); bogus AWB → `notFound`/exit 1; typecheck+lint+97/97 tests green; 10 fixtures w/ provenance README |
 | M3 | DB: schema, repo, migrations                                                      | ⬜ pending   | —          | Output: insert/diff queries tested against temp DB |
 | M4 | Poller: tick loop, jitter, backoff, terminal handling                             | ⬜ pending   | —          | Output: pollable with fake adapter; streak-alert path tested |
 | M5 | Notify: diff + message formatting                                                 | ⬜ pending   | —          | Output: snapshot / update / terminal message fixtures |
@@ -37,14 +37,14 @@ Status legend: ✅ done · 🔜 in progress · ⬜ pending
   `data` non-empty only, identity-bind, IST→UTC with 6-digit fractionals,
   per-scan + per-package leg, `RETURNED`→`hqStatus` fallback, freight
   milestone year inference, in-payload dedupe, summary-event rule),
-  `index.ts` (`delhiveryAdapter`); 9 fixtures + provenance `README.md`
+  `index.ts` (`delhiveryAdapter`); 10 fixtures + provenance `README.md`
   (in-transit from the PRD §4.2 live capture; lost = verbatim 2026-08-24
   live capture; delivered/freight/return-in-transit real shapes from prior
-  art; invalid-awb verbatim; rto-delivered/no-timestamps/awb-mismatch
-  synthesized); `src/live.ts` + `live` script (the M2 output); 4 test
-  files (85 new tests).
+  art; invalid-awb verbatim; rto-delivered/no-timestamps/awb-mismatch/
+  customer-return synthesized); `src/live.ts` + `live` script (the M2
+  output); 4 test files (88 new tests).
 - **Evidence:** `pnpm typecheck` / `pnpm lint` / `pnpm test` all green
-  (94/94). Live smoke on the real endpoint, 2026-10-20:
+  (97/97). Live smoke on the real endpoint, 2026-10-20:
   `pnpm live 55540110035405` → `kind: ok`, stage `in_transit` (live token
   `IN_TRANSIT` snake-case), `statusAt 2026-10-19T16:25:52.989Z` (IST→UTC
   with real milliseconds), ETA `26 Oct 2026, Evening`, destCity Bangalore,
