@@ -3,12 +3,16 @@
  * adapter, persists outcomes through the repo, and emits one structured
  * notification per parcel per poll (M5 formats, M6 sends to Telegram).
  *
- * Cadence (PRD §8):
- * - base `intervalMs` (config `POLL_INTERVAL_MIN`), jittered per poll by
- *   ±`jitter` (default 20%) — every completed poll reschedules its parcel;
+ * Cadence (PRD §8, §9):
+ * - base `intervalMs` (config `POLL_INTERVAL_MIN`); every completed poll
+ *   reschedules its parcel with the jitter draw floored at one full
+ *   interval (PRD §9: ≤ 1 request per parcel per 15 min), so the
+ *   effective band is [interval, interval·(1+jitter)] — 15–18 min at
+ *   defaults;
  * - at boot, parcels are staggered across one window (parcel i of n is
  *   due at boot + i·interval/n) so a fleet of N never hits the endpoint
- *   at one instant;
+ *   at one instant — fleet spread comes from that boot stagger plus the
+ *   positive jitter;
  * - a parcel is never polled within one full interval of its last poll
  *   (PRD §9 ToS note) and never before its backoff pause has elapsed
  *   (PRD §8) — both floors derive from persisted state, so restarts
@@ -128,8 +132,9 @@ const DEFAULT_MAX_CONCURRENT = 3;
 const DEFAULT_MAX_CHECK_DELAY_MS = 60_000;
 
 /**
- * Next-poll delay for one parcel: `intervalMs · (1 + u)` with
- * `u ∈ [-jitter, +jitter]` (PRD §8: jitter ±20%).
+ * Raw jittered delay for one parcel: `intervalMs · (1 + u)` with
+ * `u ∈ [-jitter, +jitter]` (PRD §8: jitter ±20%). Callers floor the
+ * draw at one full interval (see `rescheduleDelayMs`, PRD §9).
  */
 export function jitteredDelayMs(
   intervalMs: number,
@@ -176,6 +181,18 @@ export function createPoller(deps: PollerDeps, options: PollerOptions): Poller {
   const errText = (err: unknown): string =>
     err instanceof Error ? err.message : String(err);
 
+  /**
+   * One parcel's next-due delay: the raw ±jitter draw floored at one
+   * full interval — never two requests for one parcel within
+   * `intervalMs` (PRD §9 ToS note: ≤ 1 request per parcel per 15 min).
+   * Effective band [interval, interval·(1+jitter)] (15–18 min at
+   * defaults); fleet spread comes from the boot stagger plus this
+   * positive jitter.
+   */
+  function rescheduleDelayMs(): number {
+    return Math.max(intervalMs, jitteredDelayMs(intervalMs, jitter, rng));
+  }
+
   /** Map the carrier's result onto the repo's poll outcome (M3 contract). */
   const toPollOutcome = (result: CarrierResult): PollOutcome => {
     switch (result.kind) {
@@ -195,8 +212,11 @@ export function createPoller(deps: PollerDeps, options: PollerOptions): Poller {
   /**
    * Set the next-due time for one parcel relative to a reference `boot`
    * instant and its stagger `slot`:
-   * - no last poll yet (freshly added): first poll ≈ one interval later,
-   *   jittered — the add-time snapshot is the first message (PRD §8);
+   * - no last poll yet (freshly added): first poll ≈ one interval after
+   *   seeding — the jitter draw floored at one full interval like every
+   *   reschedule (the add-time fetch counts as this parcel's previous
+   *   request, PRD §9); the add-time snapshot is its first message
+   *   (PRD §8);
    * - otherwise: the later of the stagger slot, `lastPoll + interval`
    *   (PRD §9: ≤ 1 request per parcel per 15 min) and
    *   `lastPoll + backoff` (a pause survives a restart, PRD §8).
@@ -210,7 +230,7 @@ export function createPoller(deps: PollerDeps, options: PollerOptions): Poller {
     const last = row.lastPolledAt === null ? null : Date.parse(row.lastPolledAt);
     const cadenceFloor = last === null ? 0 : last + intervalMs;
     const pauseFloor = last === null ? 0 : last + backoffMs(row.errorStreak);
-    const firstPoll = last === null ? boot + jitteredDelayMs(intervalMs, jitter, rng) : 0;
+    const firstPoll = last === null ? boot + rescheduleDelayMs() : 0;
     nextDueAt.set(awb, Math.max(slot, cadenceFloor, pauseFloor, firstPoll));
   }
 
@@ -261,14 +281,17 @@ export function createPoller(deps: PollerDeps, options: PollerOptions): Poller {
       // violation — the DB should only hold 13–14 digit AWBs) or on a
       // genuine bug. Log loudly, keep the cadence, do not crash the loop.
       log.error({ awb, err: errText(err) }, "adapter threw outside its contract — poll skipped");
-      nextDueAt.set(awb, t + jitteredDelayMs(intervalMs, jitter, rng));
+      nextDueAt.set(awb, t + rescheduleDelayMs());
       return;
     }
 
     switch (result.kind) {
       case "ok": {
-        const fresh = insertEvents(db, awb, result.pkg.events, tIso);
-        recordPoll(db, awb, toPollOutcome(result), tIso);
+        const fresh = db.transaction((): CarrierEvent[] => {
+          const inserted = insertEvents(db, awb, result.pkg.events, tIso);
+          recordPoll(db, awb, toPollOutcome(result), tIso);
+          return inserted;
+        })();
         const after = getPackage(db, awb);
         if (after === null) break; // cannot happen in-process; defensive
         if (result.pkg.terminal) {
@@ -288,7 +311,7 @@ export function createPoller(deps: PollerDeps, options: PollerOptions): Poller {
         } else {
           log.debug({ awb, polls: after.polls }, "poll: no changes");
         }
-        nextDueAt.set(awb, t + jitteredDelayMs(intervalMs, jitter, rng));
+        nextDueAt.set(awb, t + rescheduleDelayMs());
         break;
       }
       case "notFound": {
@@ -299,7 +322,7 @@ export function createPoller(deps: PollerDeps, options: PollerOptions): Poller {
           log.warn({ awb, message: result.message }, "feed reports no such parcel — told once, keeping up polls");
           await safeEmit({ kind: "notFound", awb, message: result.message });
         }
-        nextDueAt.set(awb, t + jitteredDelayMs(intervalMs, jitter, rng));
+        nextDueAt.set(awb, t + rescheduleDelayMs());
         break;
       }
       case "auth":
@@ -329,13 +352,13 @@ export function createPoller(deps: PollerDeps, options: PollerOptions): Poller {
           );
         }
         const pause = backoffMs(after.errorStreak);
-        nextDueAt.set(awb, t + (pause > 0 ? pause : jitteredDelayMs(intervalMs, jitter, rng)));
+        nextDueAt.set(awb, t + (pause > 0 ? pause : rescheduleDelayMs()));
         break;
       }
       case "network": {
         recordPoll(db, awb, toPollOutcome(result), tIso);
         log.debug({ awb, message: result.message }, "poll: network error — silent retry next tick (PRD §8)");
-        nextDueAt.set(awb, t + jitteredDelayMs(intervalMs, jitter, rng));
+        nextDueAt.set(awb, t + rescheduleDelayMs());
         break;
       }
     }
@@ -417,6 +440,8 @@ export function createPoller(deps: PollerDeps, options: PollerOptions): Poller {
         log.debug({ due: due.length, adapter: adapter.name }, "polling due parcels");
         await runPool(due, pollOne);
       }
+    } catch (err) {
+      log.error({ err: errText(err) }, "tick failed — next tick proceeds");
     } finally {
       ticking = false;
       scheduleNext();

@@ -12,7 +12,7 @@ Status legend: ✅ done · 🔜 in progress · ⬜ pending
 | M1 | Scaffold: TS project, config, pino, lint, vitest                                 | ✅ done        | 2026-10-19 | Fresh `pnpm install` clean; typecheck+lint+9/9 tests green; `pnpm dev` boots (exits after boot log — keep-alive comes with M6); config error path exits 1 with all problems listed |
 | M2 | **Delhivery adapter: client + parse + status map + fixtures + unit tests**       | ✅ done        | 2026-10-20 | `pnpm live 55540110035405` → real endpoint returned `kind: ok` (stage in_transit, IST→UTC with ms, shallow feed as documented); bogus AWB → `notFound`/exit 1; typecheck+lint+97/97 tests green; 10 fixtures w/ provenance README |
 | M3 | DB: schema, repo, migrations                                                      | ✅ done        | 2026-10-20 | `src/db/` shipped (schema.sql v1, db.ts WAL+FK+migrations, carrier-agnostic repo.ts); typecheck+lint+124/124 tests green (23 new at M3, +4 net from review round 1; incl. PRD §12.3 diff + NULL-dedupe caveat); `pnpm dev` creates+migrates `./data/parceltongue.db` (v1) and reopens idempotently; `pnpm build` copies schema.sql into dist and compiled `main.js` boots |
-| M4 | Poller: tick loop, jitter, backoff, terminal handling                             | ✅ done        | 2026-10-20 | `src/poller/` shipped (loop.ts: boot stagger across the window, ±20% jitter, concurrency ≤ 3, PRD §9 cadence floor, terminal exclusion; backoff.ts: alert once at streak 3, then 1 h → 6 h → 24 h); pollable with fake adapter — 19 new tests incl. streak-alert path, pause-across-restart, concurrency cap, emit/throw resilience; typecheck+lint+143/143 green; `pnpm build` emits `dist/poller/` |
+| M4 | Poller: tick loop, jitter, backoff, terminal handling                             | ✅ done        | 2026-10-20 | `src/poller/` shipped (loop.ts: boot stagger across the window, per-poll jitter floored at one interval (effective 15–18 min, PRD §9), concurrency ≤ 3, PRD §9 cadence floor, terminal exclusion; backoff.ts: alert once at streak 3, then 1 h → 6 h → 24 h); pollable with fake adapter — 20 new tests incl. streak-alert path, pause-across-restart, concurrency cap, emit/throw resilience; typecheck+lint+144/144 green; `pnpm build` emits `dist/poller/` |
 | M5 | Notify: diff + message formatting                                                 | ⬜ pending   | —          | Output: snapshot / update / terminal message fixtures |
 | M6 | Bot: grammY, whitelist, all 6 commands                                            | ⬜ pending   | —          | Output: add/list/status/remove via real Telegram |
 | M7 | Dockerfile + compose + README (BotFather walkthrough)                             | ⬜ pending   | —          | Output: one-command deploy |
@@ -28,13 +28,14 @@ Status legend: ✅ done · 🔜 in progress · ⬜ pending
 - **Shipped:** `src/poller/backoff.ts` (`ALERT_STREAK = 3`; `backoffMs(streak)`:
   < 3 → 0, 3 → 1 h, 4 → 6 h, ≥ 5 → 24 h plateau); `src/poller/loop.ts`
   (`createPoller`: per-parcel next-due schedule, boot stagger across one
-  window, ±20% jitter per poll, concurrency ≤ 3, `PollNotification` union
+  window, per-poll jitter floored at one interval (effective 15–18 min,
+  PRD §9), concurrency ≤ 3, `PollNotification` union
   `update | terminal | endpointBroken | notFound` as the M4→M5 contract,
-  idempotent `start`/`stop`, exported `tick`); 19 tests (17 in
+  idempotent `start`/`stop`, exported `tick`); 20 tests (18 in
   `loop.test.ts`, 2 in `backoff.test.ts`) — fake adapter, fake clock +
   fake timers, in-memory DB, no network.
-- **Evidence:** `pnpm typecheck` / `pnpm lint` clean; `pnpm test` 143/143
-  (19 new). Test plan §12.4 verified: auth failures → no alert at streak
+- **Evidence:** `pnpm typecheck` / `pnpm lint` clean; `pnpm test` 144/144
+  (20 new). Test plan §12.4 verified: auth failures → no alert at streak
   1–2, exactly one `endpointBroken` at streak 3 (carrying `pauseMs = 1 h`),
   no re-alert at streak 4/5; pause boundaries observed on the clock (no 4th
   poll before 45 min + 1 h, no 5th before + 6 h); a success resets the

@@ -400,6 +400,31 @@ describe("scheduling (PRD §8 stagger + PRD §9 cadence floor)", () => {
     }
   });
 
+  it("floors steady-state reschedules at one interval when rng draws negative jitter (PRD §9)", async () => {
+    const h = makeHarness({ rng: () => 0 }); // raw draw = 12 min — an unfloored reschedule would poll there
+    const { clock, poller, fake, db } = h;
+    try {
+      track(h, AWB, {}, BOOT - HOUR);
+      recordPoll(h.db, AWB, { ok: true, pkg: pkg(AWB) }, iso(BOOT - HOUR));
+      fake.queue(AWB, ok(pkg(AWB)), ok(pkg(AWB)));
+
+      poller.start(); // cadence floor already elapsed → due at BOOT
+      await settle(clock, () => fake.calls.length === 1);
+      const firstPollStart = clock.nowMs;
+
+      clock.advance(12 * MIN); // raw jittered delay would fall due here
+      await settle(clock, () => true);
+      expect(fake.calls).toHaveLength(1);
+
+      clock.advance(3 * MIN); // firstPollStart + intervalMs
+      await settle(clock, () => fake.calls.length === 2);
+      expect(clock.nowMs - firstPollStart).toBeGreaterThanOrEqual(INTERVAL);
+    } finally {
+      poller.stop();
+      db.close();
+    }
+  });
+
   it("a parcel in backoff stays paused across a restart (derived from last_polled_at + streak)", async () => {
     const h = makeHarness();
     const { clock, poller, fake, emitted, db } = h;
