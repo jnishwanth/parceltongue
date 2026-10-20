@@ -19,7 +19,7 @@ Package manager is **pnpm** (see `packageManager` in package.json).
 
 ```sh
 pnpm install           # install deps
-pnpm dev               # boot the app via tsx (validates config, logs, exits in M1; keep-alive comes with M6)
+pnpm dev               # boot the app via tsx (validates config, opens+migrates the DB, logs, exits until M6; keep-alive comes with M6)
 pnpm test              # vitest run (unit tests, no network)
 pnpm typecheck         # tsc --noEmit
 pnpm lint              # eslint (flat config)
@@ -55,6 +55,9 @@ src/
   `process.loadEnvFile` — no need for axios/dotenv.
 - **No new runtime dependencies** without recording them in the PRD tech table
   and in this file. Personal single-process tool: fewer deps is better.
+  Current runtime deps: `pino` (M1), `better-sqlite3` (M3, native — allow-listed
+  in `pnpm-workspace.yaml`, needs a build step in Docker, M7). Planned:
+  `grammY` (M6).
 - **Logging:** pino JSON to stdout only. No console.log in non-test code
   (main.ts may console.error once for fatal config failures, before the
   logger exists; the `live` smoke CLI `src/live.ts` is stdout-by-design).
