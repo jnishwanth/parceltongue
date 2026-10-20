@@ -13,7 +13,7 @@ Status legend: ✅ done · 🔜 in progress · ⬜ pending
 | M2 | **Delhivery adapter: client + parse + status map + fixtures + unit tests**       | ✅ done        | 2026-10-20 | `pnpm live 55540110035405` → real endpoint returned `kind: ok` (stage in_transit, IST→UTC with ms, shallow feed as documented); bogus AWB → `notFound`/exit 1; typecheck+lint+97/97 tests green; 10 fixtures w/ provenance README |
 | M3 | DB: schema, repo, migrations                                                      | ✅ done        | 2026-10-20 | `src/db/` shipped (schema.sql v1, db.ts WAL+FK+migrations, carrier-agnostic repo.ts); typecheck+lint+124/124 tests green (23 new at M3, +4 net from review round 1; incl. PRD §12.3 diff + NULL-dedupe caveat); `pnpm dev` creates+migrates `./data/parceltongue.db` (v1) and reopens idempotently; `pnpm build` copies schema.sql into dist and compiled `main.js` boots |
 | M4 | Poller: tick loop, jitter, backoff, terminal handling                             | ✅ done        | 2026-10-20 | `src/poller/` shipped (loop.ts: boot stagger across the window, per-poll jitter floored at one interval (effective 15–18 min, PRD §9), concurrency ≤ 3, PRD §9 cadence floor, terminal exclusion; backoff.ts: alert once at streak 3, then 1 h → 6 h → 24 h); pollable with fake adapter — 20 new tests incl. streak-alert path, pause-across-restart, concurrency cap, emit/throw resilience; typecheck+lint+144/144 green; `pnpm build` emits `dist/poller/` |
-| M5 | Notify: diff + message formatting                                                | ✅ done        | 2026-10-21 | `src/notify/format.ts` — all 4 `PollNotification` kinds + add-time snapshot → MarkdownV2 text; 7 pinned message fixtures (snapshot/update/terminal×3/two alerts, PRD §5 shapes); typecheck+lint+169/169 tests green (25 new, incl. post-pipeline hardening: backslash escape + 4096-char budget); diff stays `repo.insertEvents` (M3) — no separate `notify/diff.ts`, see decisions; `pnpm build` emits `dist/notify/` |
+| M5 | Notify: diff + message formatting                                                | ✅ done        | 2026-10-21 | `src/notify/format.ts` — all 4 `PollNotification` kinds + add-time snapshot → MarkdownV2 text; 7 pinned message fixtures (snapshot/update/terminal×3/two alerts, PRD §5 shapes); typecheck+lint+170/170 tests green (26 new, incl. post-pipeline hardening: backslash escape, 4096-char budget, endpointBroken lastError cap); diff stays `repo.insertEvents` (M3) — no separate `notify/diff.ts`, see decisions; `pnpm build` emits `dist/notify/` |
 | M6 | Bot: grammY, whitelist, all 6 commands                                            | ⬜ pending   | —          | Output: add/list/status/remove via real Telegram |
 | M7 | Dockerfile + compose + README (BotFather walkthrough)                             | ⬜ pending   | —          | Output: one-command deploy |
 | M8 | E2E soak: track 2–3 real parcels through delivery; tune message noise            | ⬜ pending   | —          | Ongoing. PRD §5 flows verified in the owner's chat |
@@ -37,16 +37,20 @@ Status legend: ✅ done · 🔜 in progress · ⬜ pending
   Utilities: `formatWhen` (Asia/Kolkata wall-clock from stored UTC ISO),
   `formatDurationMs` (the backoff tiers), `mdv2Escape` (Telegram MarkdownV2).
   7 pinned message fixtures in `src/notify/fixtures/` (+ provenance
-  `README.md`) and 25 tests in `format.test.ts` — inputs are the M2 carrier
+  `README.md`) and 26 tests in `format.test.ts` — inputs are the M2 carrier
   fixtures run through the real `parseDelhivery` (no network) with
   notifications assembled the way the M4 loop assembles them; `NOW` fixed at
   `2026-10-20T12:00:00Z` in the tests.
-- **Evidence:** `pnpm typecheck` / `pnpm lint` clean; `pnpm test` 169/169
-  (25 new — incl. two hardening rounds from the no-mistakes pipeline:
+- **Evidence:** `pnpm typecheck` / `pnpm lint` clean; `pnpm test` 170/170
+  (26 new — incl. three hardening rounds from the no-mistakes pipeline:
   `mdv2Escape` now escapes backslash too, so a `\` in feed text cannot
-  defeat the escaping of the other specials or break the parse; and the
+  defeat the escaping of the other specials or break the parse; the
   event block is now character-budgeted — see the "Bundling + double cap"
-  decision). All seven fixtures pinned: snapshot
+  decision; and `endpointBroken` renders `lastError` capped at 200 chars,
+  the parser's own message cap, because the schema identity-mismatch
+  message joins every feed AWB uncapped and would otherwise blow past
+  4096, making `safeEmit` silently drop the once-per-episode alert).
+  All seven fixtures pinned: snapshot
   from `in-transit.json` (PRD §4.2 live-capture AWB, mirrors the PRD §5
   snapshot example), bundled
   update mirroring the PRD §5 passive-update example (same times/cities/ETA;
@@ -66,7 +70,9 @@ Status legend: ✅ done · 🔜 in progress · ⬜ pending
   with no new events (status-line fallback) and with a null reason, 25-event
   backlog → 20 events + "… and 5 more" tail, worst-case parse-legal
   200/160-char backlog → 10 events + tail, 3690 chars total (< 4096),
-  escaping of every MarkdownV2 special in carrier-controlled text.
+  multi-KB endpointBroken `lastError` → 200-char capped line, message
+  stays ≤ 4096, escaping of every MarkdownV2 special in carrier-controlled
+  text.
   `pnpm build` → `dist/notify/format.js`
   (tests excluded); `pnpm dev` behavior unchanged (main.ts not wired yet —
   the emit sink is M6).

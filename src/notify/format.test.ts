@@ -350,7 +350,7 @@ describe("degenerate inputs", () => {
 
   it("a worst-case parse-legal backlog (200-char labels, 160-char locations) stays under Telegram's 4096 limit", () => {
     // The parser's own caps: descriptions 200 chars, locations 160 — the
-    // count cap alone would render a 7709-char message here.
+    // count cap alone would render a 7349-char message here.
     const label = "L".repeat(200);
     const location = "M".repeat(160);
     const n: Extract<PollNotification, { kind: "update" }> = {
