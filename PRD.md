@@ -173,41 +173,25 @@ Single Node.js process, one SQLite file, one Telegram long-poll connection, one 
 
 ## 7. Data model (SQLite)
 
-```sql
-CREATE TABLE packages (
-  awb              TEXT PRIMARY KEY,        -- 13–14 digits, normalized
-  added_at         TEXT NOT NULL,
-  source_link      TEXT,                    -- original link if provided
-  dest_city        TEXT,
-  reference_no     TEXT,
-  product_type     TEXT,
-  current_stage    TEXT,                    -- registered|accepted|in_transit|out_for_delivery|delivered|returned|exception|unknown
-  status_text      TEXT,                    -- latest raw status description
-  status_at        TEXT,                    -- latest status time (UTC ISO, source IST)
-  delivery_eta     TEXT,                    -- raw prose, e.g. "26 Oct 2026, Evening"
-  terminal         INTEGER NOT NULL DEFAULT 0,
-  terminal_reason  TEXT,                    -- delivered|rto|lost|cancelled
-  polls            INTEGER NOT NULL DEFAULT 0,
-  last_polled_at   TEXT,
-  last_error       TEXT,
-  error_streak     INTEGER NOT NULL DEFAULT 0
-);
+Authoritative DDL: **`src/db/schema.sql`** (versioned — v1 applied by
+`db.ts`'s ordered migrations; don't hand-copy the SQL into this PRD, it
+drifts). Shape in brief:
 
-CREATE TABLE events (
-  id             INTEGER PRIMARY KEY,
-  awb            TEXT NOT NULL REFERENCES packages(awb),
-  occurred_at    TEXT,                      -- UTC ISO when the feed gave a time, else NULL
-  description    TEXT NOT NULL,             -- scan label / status text
-  location       TEXT,                      -- cityLocation or scannedLocation
-  stage          TEXT,                      -- classified stage when known
-  leg            TEXT NOT NULL DEFAULT 'forward',  -- forward|return
-  is_summary     INTEGER NOT NULL DEFAULT 0,       -- 1 = status snapshot, not a scan
-  first_seen_at  TEXT NOT NULL,
-  UNIQUE (awb, description, occurred_at, location, leg)   -- dedupe across polls
-);
+- `packages` — one row per tracked AWB: `current_stage`
+  (registered|accepted|in_transit|out_for_delivery|delivered|returned|
+  exception|unknown), `status_text`/`status_at`, `delivery_eta`, source
+  link/city/ref/product, `terminal` + `terminal_reason`
+  (delivered|rto|lost|cancelled), poll/error accounting (`polls`,
+  `last_polled_at`, `last_error`, `error_streak`).
+- `events` — append-only scans, `awb` FK → `packages.awb`: `occurred_at`
+  (UTC ISO, else NULL), `description`, `location`, `stage`, `leg`
+  (forward|return), `is_summary`, `first_seen_at`.
 
-CREATE INDEX idx_events_awb ON events(awb, first_seen_at);
-```
+Dedupe across polls: a table-level `UNIQUE (awb, description,
+occurred_at, location, leg)` cannot work in SQLite — NULLs compare
+distinct, so undated scans would re-insert every poll — so v1 enforces
+the key as the unique expression index `uq_events_dedupe` over
+`COALESCE(occurred_at,'')` / `COALESCE(location,'')`.
 
 Notes:
 - All timestamps stored as UTC ISO; source times assumed `Asia/Kolkata`.

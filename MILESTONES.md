@@ -11,7 +11,7 @@ Status legend: ✅ done · 🔜 in progress · ⬜ pending
 |----|----------------------------------------------------------------------------------|--------------|------------|------------------|
 | M1 | Scaffold: TS project, config, pino, lint, vitest                                 | ✅ done        | 2026-10-19 | Fresh `pnpm install` clean; typecheck+lint+9/9 tests green; `pnpm dev` boots (exits after boot log — keep-alive comes with M6); config error path exits 1 with all problems listed |
 | M2 | **Delhivery adapter: client + parse + status map + fixtures + unit tests**       | ✅ done        | 2026-10-20 | `pnpm live 55540110035405` → real endpoint returned `kind: ok` (stage in_transit, IST→UTC with ms, shallow feed as documented); bogus AWB → `notFound`/exit 1; typecheck+lint+97/97 tests green; 10 fixtures w/ provenance README |
-| M3 | DB: schema, repo, migrations                                                      | ⬜ pending   | —          | Output: insert/diff queries tested against temp DB |
+| M3 | DB: schema, repo, migrations                                                      | ✅ done        | 2026-10-20 | `src/db/` shipped (schema.sql v1, db.ts WAL+FK+migrations, carrier-agnostic repo.ts); typecheck+lint+124/124 tests green (23 new at M3, +4 net from review round 1; incl. PRD §12.3 diff + NULL-dedupe caveat); `pnpm dev` creates+migrates `./data/parceltongue.db` (v1) and reopens idempotently; `pnpm build` copies schema.sql into dist and compiled `main.js` boots |
 | M4 | Poller: tick loop, jitter, backoff, terminal handling                             | ⬜ pending   | —          | Output: pollable with fake adapter; streak-alert path tested |
 | M5 | Notify: diff + message formatting                                                 | ⬜ pending   | —          | Output: snapshot / update / terminal message fixtures |
 | M6 | Bot: grammY, whitelist, all 6 commands                                            | ⬜ pending   | —          | Output: add/list/status/remove via real Telegram |
@@ -22,6 +22,99 @@ Status legend: ✅ done · 🔜 in progress · ⬜ pending
 
 <!-- Newest entry first. Each entry: date, milestone, what shipped, evidence
      (test/typecheck/lint results, key commands), anything deferred. -->
+
+### 2026-10-20 — M3 done: DB (schema, repo, migrations)
+
+- **Shipped:** `src/db/schema.sql` (PRD §7 v1: `packages`, `events`,
+  `idx_events_awb`, plus `uq_events_dedupe` — see caveat decision below);
+  `src/db/db.ts` (`openDb`: creates parent dirs, `journal_mode=WAL` +
+  `synchronous=NORMAL` + `foreign_keys=ON` + `busy_timeout=5000` for file
+  DBs, ordered-migrations runner over `schema_migrations(version,
+  applied_at)`, `schemaVersion()`); `src/db/repo.ts` (carrier-agnostic:
+  `addPackage`, `getPackage`, `listPackages`, `activePackages`,
+  `recordPoll` over a `PollOutcome` union, `insertEvents` (the cross-poll
+  diff), `eventsForAwb`); `src/main.ts` wires db into the bootstrap
+  (PRD §11 db → poller → bot) and still exits after the boot log
+  (keep-alive is M6); `pnpm build` now copies `schema.sql` into
+  `dist/db/` (tsc doesn't carry non-TS assets). Deps: `better-sqlite3`
+  (PRD §6 tech table) + `@types/better-sqlite3`; `allowBuilds` entry in
+  `pnpm-workspace.yaml`.
+- **Evidence:** `pnpm typecheck` / `pnpm lint` clean; `pnpm test` 124/124
+  (M3 added 23: 5 in `db.test.ts`, 18 in `repo.test.ts`; review round 1
+  grew `repo.test.ts` to 22 — add-time event persistence + per-kind
+  `recordPoll` failure coverage). PRD §12 test-plan
+  #3 verified against a temp (`:memory:`) DB: first poll → every event new;
+  re-poll same payload → 0 new; feed grows by one scan → exactly 1 new.
+  M2 NULL-dedupe caveat verified both ways (undated `occurred_at` and
+  null `location` re-inserts return 0 new). FK enforced (event for unknown
+  AWB throws; repo throws loudly rather than letting `INSERT OR IGNORE`
+  swallow it). Migrations idempotent across reopen; pragmas asserted on a
+  temp file DB. `pnpm dev` with env → pino boot line,
+  `./data/parceltongue.db` created+migrated (tables
+  `events,packages,schema_migrations`, v1), exit 0; second run reopens the
+  WAL file cleanly. `pnpm build` → `dist/db/{db.js,repo.js,schema.sql}`;
+  `node dist/main.js` boots (schema.sql resolved from dist).
+- **Decisions:**
+  - **M2 caveat (flagged, now fixed):** the PRD §7 table-level
+    `UNIQUE (awb, description, occurred_at, location, leg)` cannot work as
+    written — SQLite treats NULLs as distinct in UNIQUE constraints, so
+    every undated scan (the anonymous feed is full of them, PRD §4.3
+    pitfall 4) would re-diff on each poll. Implemented instead as the
+    unique expression index `uq_events_dedupe` over
+    `COALESCE(occurred_at,'')` / `COALESCE(location,'')`. Coalescing
+    strictly reduces duplicates vs the plain constraint (NULL-vs-NULL
+    rows), never increases them.
+  - `insertEvents` returns the events actually inserted, in input order —
+    that is the PRD §7 diff ("fresh parse but not yet in the table"); M5
+    bundles the return value into the one message per parcel per poll.
+    One transaction, `INSERT OR IGNORE` + `changes()` per row.
+  - `eventsForAwb` orders by `first_seen_at ASC, id ASC` (the order we
+    first saw events = the notification-faithful timeline; feed order can
+    drift as the shallow feed later reveals dates, PRD §4.3 pitfall 4).
+  - Migrations: append-only list in `db.ts`, each applied in one
+    transaction, applied versions recorded with a UTC ISO stamp. New
+    migrations are appended, never edited. `schema.sql` is loaded eagerly
+    via `new URL("./schema.sql", import.meta.url)` — a missing file fails
+    at import, not mid-poll.
+  - `recordPoll(awb, outcome, now)` takes `{ ok: true, pkg } | { ok:
+    false, kind, message }` where the exported `kind: notFound | auth |
+    schema | network` selects per PRD §8 failure semantics (review round
+    1): success refreshes the snapshot columns, increments `polls`,
+    resets `error_streak`/`last_error`, and applies terminal state;
+    `notFound` sets `last_error` without bumping the streak (possible
+    feed glitch — tell once, keep polling), `auth`/`schema` set
+    `last_error` and increment `error_streak` (M4's alert-at-3/backoff
+    consumes it), `network` updates poll accounting only (silent retry
+    next tick). The M4 poller maps `CarrierResult` kinds onto this union;
+    the backoff policy itself stays in M4.
+  - `addPackage` returns false for an already-tracked AWB (PRD §8
+    no-op, events untouched) and stores terminal state at add time
+    (tracking an already-delivered parcel starts out of polling). When
+    it creates the row it also persists the add-time `pkg.events` in the
+    same transaction (review round 1), so the add-time snapshot is the
+    first (only) message at add time and a later `insertEvents` with the
+    same payload returns 0 new events (PRD §8); `recordPoll`'s success
+    path keeps its companion-call contract (M4 calls `insertEvents`
+    separately).
+  - `listPackages` = PRD §5 `/list` ordering: active first (newest
+    additions first), terminal at the bottom. `activePackages` mirrors
+    that ordering (what M4's stagger consumes).
+  - `better-sqlite3@13` compiled from source here (node-gyp, no prebuild
+    for this Node build) — the `allowBuilds` entry is load-bearing.
+- **Deferred to M4:** poll tick/jitter/stagger/concurrency, `CarrierResult`
+  → `PollOutcome` mapping, backoff consuming `error_streak` (1 h → 6 h →
+  24 h, alert at streak 3), terminal exclusion in the loop (repo already
+  exposes `activePackages`).
+- **Deferred to M6 (needs a decision):** `/remove` semantics — PRD §5 says
+  "stop tracking (history retained)" but the §7 schema has no removed
+  flag. Options: (a) set `terminal = 1` (excluded from polling, shows at
+  `/list` bottom — but `terminal_reason` is typed delivered|rto|lost|
+  cancelled, and a removed parcel is none of those); (b) add a `removed`
+  column via migration v2. Leaning (b): one small migration, no semantic
+  overload.
+- **Deferred to M7:** Docker build must rebuild the native module (or use
+  the same Node image build stage) — `better-sqlite3` is compiled per
+  platform/Node version.
 
 ### 2026-10-20 — M2 done: Delhivery adapter
 
@@ -58,7 +151,7 @@ Status legend: ✅ done · 🔜 in progress · ⬜ pending
     implementation has to live somewhere; client/parse stay transport and
     parsing respectively.
   - `events.location` prefers `scannedLocation` over `cityLocation`
-    (PRD §7 lists them without priority; the specific scan point is the
+    (`schema.sql` lists them without priority; the specific scan point is the
     more useful one).
   - Never branch on HTTP status or `statusCode` (pitfall 1); a non-2xx
     HTTP response is a *transport* error, and `statusCode` in the body is

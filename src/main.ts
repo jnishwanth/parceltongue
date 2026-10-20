@@ -1,13 +1,15 @@
 import { existsSync } from "node:fs";
 import pino from "pino";
 import { ConfigError, loadConfig, type Config } from "./config.js";
+import { openDb, schemaVersion, type DB } from "./db/db.js";
 
 /**
  * Bootstrap.
  *
- * M1 state: validates config, builds the logger, logs the boot line and
- * exits. The real pipeline (db → poller → bot, PRD §6) is wired in M3–M6;
- * process keep-alive comes with the bot (M6).
+ * M3 state: validates config, builds the logger, opens the SQLite database
+ * (creating the file + parent dir, applying migrations) and exits. The
+ * real pipeline (db → poller → bot, PRD §6) completes in M4–M6; process
+ * keep-alive comes with the bot (M6).
  */
 function main(): void {
   // Node 22 built-in .env loading; does not override already-set vars.
@@ -39,10 +41,24 @@ function main(): void {
       pollIntervalMin: cfg.pollIntervalMin,
       logLevel: cfg.logLevel,
     },
-    "parceltongue booting (M1 scaffold)",
+    "parceltongue booting (M3: db wired)",
   );
+
+  let db: DB;
+  try {
+    db = openDb(cfg.dbPath);
+  } catch (err) {
+    log.fatal({ err: err instanceof Error ? err.message : String(err) }, "failed to open database");
+    process.exit(1);
+  }
   log.info(
-    "db/poller/bot not wired yet — see MILESTONES.md (next: M2 Delhivery adapter)",
+    { dbPath: cfg.dbPath, schemaVersion: schemaVersion(db) },
+    "database ready",
+  );
+
+  db.close();
+  log.info(
+    "poller/bot not wired yet — see MILESTONES.md (next: M4 poller)",
   );
 }
 
