@@ -44,8 +44,8 @@ const MONTHS = [
 // MarkdownV2
 // ---------------------------------------------------------------------------
 
-/** Every character Telegram's MarkdownV2 treats as markup. */
-const MDV2_SPECIALS = /[_*[\]()~`>#+\-=|{}.!]/g;
+/** Every character Telegram's MarkdownV2 treats as markup (backslash included: an unescaped '\' in feed text defeats the escaping of every other special and can break the parse). */
+const MDV2_SPECIALS = /[_*[\]()~`>#+\-=|{}.!\\]/g;
 
 /**
  * Escape a string for safe interpolation into a MarkdownV2 message

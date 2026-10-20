@@ -423,4 +423,24 @@ describe("mdv2Escape", () => {
     expect(out).toContain(`✦ ${mdv2Escape(hostile)}`);
     expect(out).not.toContain(hostile); // the raw form must never appear
   });
+
+  it("escapes backslash too, so feed backslashes cannot break parse mode or inject markup", () => {
+    // Each backslash must itself become an escaped literal backslash;
+    // otherwise '\*HACKED*\*' renders '\\' + bare '*' (injected bold),
+    // 'before\📦after' is backslash-before-non-special (parse error),
+    // and a trailing '\' leaves the message unparseable (send dropped).
+    expect(mdv2Escape("\\*HACKED*\\*")).toBe("\\\\\\*HACKED\\*\\\\\\*");
+    expect(mdv2Escape("before\\📦after")).toBe("before\\\\📦after");
+    expect(mdv2Escape("ETA ends \\")).toBe("ETA ends \\\\");
+
+    const hostile = "\\*HACKED*\\*";
+    const n: Extract<PollNotification, { kind: "update" }> = {
+      kind: "update",
+      pkg: row(),
+      events: [ev({ description: hostile })],
+    };
+    const out = formatUpdateMessage(n, NOW);
+    expect(out).toContain(`✦ \\\\\\*HACKED\\*\\\\\\*`);
+    expect(out).not.toContain(hostile); // the raw form must never appear
+  });
 });
