@@ -22,8 +22,8 @@ interface Migration {
 }
 
 /**
- * Ordered schema migrations. v1 is the PRD §7 schema verbatim (plus the
- * COALESCE dedupe index — see schema.sql). New migrations are appended,
+ * Ordered schema migrations. v1 applies `schema.sql` — the authoritative
+ * schema (PRD §7 points at it). New migrations are appended,
  * never edited: applied versions are recorded in `schema_migrations`.
  */
 const MIGRATIONS: readonly Migration[] = [

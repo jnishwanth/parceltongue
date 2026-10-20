@@ -219,7 +219,8 @@ export type PollOutcome =
  * Record one poll for a tracked parcel (`now` = UTC ISO):
  * - success: refresh the snapshot columns, increment `polls`, reset
  *   `error_streak`/`last_error`, and apply terminal state when the stage is
- *   terminal (PRD §8);
+ *   terminal (PRD §8). Companion call: events are NOT inserted here — M4
+ *   calls `insertEvents` with the fresh payload separately;
  * - failure:
  *   - notFound: set `last_error`, do NOT increment `error_streak` (PRD §8:
  *     possible feed glitch, tell once/mark and keep polling)

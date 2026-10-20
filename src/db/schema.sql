@@ -30,19 +30,19 @@ CREATE TABLE events (
   leg            TEXT NOT NULL DEFAULT 'forward',  -- forward|return
   is_summary     INTEGER NOT NULL DEFAULT 0,       -- 1 = status snapshot, not a scan
   first_seen_at  TEXT NOT NULL
-  -- PRD §7 lists UNIQUE (awb, description, occurred_at, location, leg) here,
-  -- but SQLite treats NULLs as distinct in UNIQUE constraints, so two
-  -- undated (or location-less) scans of the same description+time would
-  -- re-insert on every poll. The dedupe key is enforced as a unique
-  -- expression index with COALESCE below instead (see uq_events_dedupe).
+  -- Dedupe across polls (PRD §7) is enforced by the unique expression
+  -- index below, not a table-level UNIQUE: SQLite treats NULLs as
+  -- distinct in UNIQUE constraints, so two undated (or location-less)
+  -- scans of the same description would re-insert on every poll
+  -- (see uq_events_dedupe).
 );
 
 CREATE INDEX idx_events_awb ON events(awb, first_seen_at);
 
--- Cross-poll dedupe key (PRD §7 `events` UNIQUE). COALESCE makes NULL
--- occurred_at / location compare equal, so undated scans are only ever
--- inserted once (M2 flagged this caveat; the anonymous feed is full of
--- scans without timestamps — PRD §4.3 pitfall 4).
+-- Cross-poll dedupe key (PRD §7). COALESCE makes NULL occurred_at /
+-- location compare equal, so undated scans are only ever inserted once
+-- (M2 flagged this caveat; the anonymous feed is full of scans without
+-- timestamps — PRD §4.3 pitfall 4).
 CREATE UNIQUE INDEX uq_events_dedupe ON events(
   awb, description, COALESCE(occurred_at, ''), COALESCE(location, ''), leg
 );

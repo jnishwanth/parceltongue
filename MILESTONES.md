@@ -11,7 +11,7 @@ Status legend: ✅ done · 🔜 in progress · ⬜ pending
 |----|----------------------------------------------------------------------------------|--------------|------------|------------------|
 | M1 | Scaffold: TS project, config, pino, lint, vitest                                 | ✅ done        | 2026-10-19 | Fresh `pnpm install` clean; typecheck+lint+9/9 tests green; `pnpm dev` boots (exits after boot log — keep-alive comes with M6); config error path exits 1 with all problems listed |
 | M2 | **Delhivery adapter: client + parse + status map + fixtures + unit tests**       | ✅ done        | 2026-10-20 | `pnpm live 55540110035405` → real endpoint returned `kind: ok` (stage in_transit, IST→UTC with ms, shallow feed as documented); bogus AWB → `notFound`/exit 1; typecheck+lint+97/97 tests green; 10 fixtures w/ provenance README |
-| M3 | DB: schema, repo, migrations                                                      | ✅ done        | 2026-10-20 | `src/db/` shipped (schema.sql v1, db.ts WAL+FK+migrations, carrier-agnostic repo.ts); typecheck+lint+120/120 tests green (23 new, incl. PRD §12.3 diff + NULL-dedupe caveat); `pnpm dev` creates+migrates `./data/parceltongue.db` (v1) and reopens idempotently; `pnpm build` copies schema.sql into dist and compiled `main.js` boots |
+| M3 | DB: schema, repo, migrations                                                      | ✅ done        | 2026-10-20 | `src/db/` shipped (schema.sql v1, db.ts WAL+FK+migrations, carrier-agnostic repo.ts); typecheck+lint+124/124 tests green (23 new at M3, +4 net from review round 1; incl. PRD §12.3 diff + NULL-dedupe caveat); `pnpm dev` creates+migrates `./data/parceltongue.db` (v1) and reopens idempotently; `pnpm build` copies schema.sql into dist and compiled `main.js` boots |
 | M4 | Poller: tick loop, jitter, backoff, terminal handling                             | ⬜ pending   | —          | Output: pollable with fake adapter; streak-alert path tested |
 | M5 | Notify: diff + message formatting                                                 | ⬜ pending   | —          | Output: snapshot / update / terminal message fixtures |
 | M6 | Bot: grammY, whitelist, all 6 commands                                            | ⬜ pending   | —          | Output: add/list/status/remove via real Telegram |
@@ -39,8 +39,10 @@ Status legend: ✅ done · 🔜 in progress · ⬜ pending
   `dist/db/` (tsc doesn't carry non-TS assets). Deps: `better-sqlite3`
   (PRD §6 tech table) + `@types/better-sqlite3`; `allowBuilds` entry in
   `pnpm-workspace.yaml`.
-- **Evidence:** `pnpm typecheck` / `pnpm lint` clean; `pnpm test` 120/120
-  (23 new: 5 in `db.test.ts`, 18 in `repo.test.ts`). PRD §12 test-plan
+- **Evidence:** `pnpm typecheck` / `pnpm lint` clean; `pnpm test` 124/124
+  (M3 added 23: 5 in `db.test.ts`, 18 in `repo.test.ts`; review round 1
+  grew `repo.test.ts` to 22 — add-time event persistence + per-kind
+  `recordPoll` failure coverage). PRD §12 test-plan
   #3 verified against a temp (`:memory:`) DB: first poll → every event new;
   re-poll same payload → 0 new; feed grows by one scan → exactly 1 new.
   M2 NULL-dedupe caveat verified both ways (undated `occurred_at` and
@@ -74,16 +76,26 @@ Status legend: ✅ done · 🔜 in progress · ⬜ pending
     migrations are appended, never edited. `schema.sql` is loaded eagerly
     via `new URL("./schema.sql", import.meta.url)` — a missing file fails
     at import, not mid-poll.
-  - `recordPoll(awb, outcome, now)` takes
-    `{ ok: true, pkg } | { ok: false, message }`: success refreshes the
-    snapshot columns, increments `polls`, resets `error_streak`/
-    `last_error`, and applies terminal state; failure keeps the snapshot,
-    sets `last_error`, bumps `error_streak`. The M4 poller maps
-    `CarrierResult` kinds onto this union; the backoff policy itself stays
-    in M4.
+  - `recordPoll(awb, outcome, now)` takes `{ ok: true, pkg } | { ok:
+    false, kind, message }` where the exported `kind: notFound | auth |
+    schema | network` selects per PRD §8 failure semantics (review round
+    1): success refreshes the snapshot columns, increments `polls`,
+    resets `error_streak`/`last_error`, and applies terminal state;
+    `notFound` sets `last_error` without bumping the streak (possible
+    feed glitch — tell once, keep polling), `auth`/`schema` set
+    `last_error` and increment `error_streak` (M4's alert-at-3/backoff
+    consumes it), `network` updates poll accounting only (silent retry
+    next tick). The M4 poller maps `CarrierResult` kinds onto this union;
+    the backoff policy itself stays in M4.
   - `addPackage` returns false for an already-tracked AWB (PRD §8
-    no-op) and stores terminal state at add time (tracking an
-    already-delivered parcel starts out of polling).
+    no-op, events untouched) and stores terminal state at add time
+    (tracking an already-delivered parcel starts out of polling). When
+    it creates the row it also persists the add-time `pkg.events` in the
+    same transaction (review round 1), so the add-time snapshot is the
+    first (only) message at add time and a later `insertEvents` with the
+    same payload returns 0 new events (PRD §8); `recordPoll`'s success
+    path keeps its companion-call contract (M4 calls `insertEvents`
+    separately).
   - `listPackages` = PRD §5 `/list` ordering: active first (newest
     additions first), terminal at the bottom. `activePackages` mirrors
     that ordering (what M4's stagger consumes).
@@ -139,7 +151,7 @@ Status legend: ✅ done · 🔜 in progress · ⬜ pending
     implementation has to live somewhere; client/parse stay transport and
     parsing respectively.
   - `events.location` prefers `scannedLocation` over `cityLocation`
-    (PRD §7 lists them without priority; the specific scan point is the
+    (`schema.sql` lists them without priority; the specific scan point is the
     more useful one).
   - Never branch on HTTP status or `statusCode` (pitfall 1); a non-2xx
     HTTP response is a *transport* error, and `statusCode` in the body is
