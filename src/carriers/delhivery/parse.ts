@@ -163,6 +163,11 @@ function legOfCurrentStatus(statusType: string, currentFlow: string): Leg {
   // Pitfall 5: RT statusType or a Returned/Reverse flow marks the return
   // leg. Observed flows also include "Closed" (e.g. lost shipments) —
   // everything not listed is the forward leg.
+  //
+  // "Returned" is honored HERE (package level) because the parcel is
+  // currently travelling back to the sender, but it is deliberately NOT
+  // honored at the per-scan/per-milestone level — a Returned flow still
+  // replays FORWARD history (see the per-scan leg below).
   return statusType === "RT" || currentFlow === "Returned" || currentFlow === "Reverse"
     ? "return"
     : "forward";
@@ -275,6 +280,16 @@ export function parseDelhivery(payload: unknown, requestedAwb: string): ParseOut
       const scanType = cleanString(scan.scanType, 16) ?? "";
       // Per-scan leg: the scan's own type wins (observed: UD/DL/RT/LT); a
       // fully-Reverse flow implies return for any scan it carries.
+      //
+      // "Returned" is deliberately NOT applied here: that flow means the
+      // parcel is currently travelling back, but the feed still replays the
+      // FORWARD history — pickup, forward transit, and (for customer
+      // returns, DTO) a forward "Delivered" scan on the original delivery.
+      // The scan's own scanType is the ground truth for the leg THAT scan
+      // occurred on. Only a fully-"Reverse" flow means the whole feed is
+      // the return leg. Marking a forward UD "Delivered" inside a Returned
+      // flow as return would invent a false rto terminal for a customer
+      // return (see fixtures/customer-return.json).
       const scanLeg: Leg = scanType === "RT" || currentFlow === "Reverse" ? "return" : "forward";
       const scanStage = withReturnLegOverride(classifyStatus(label), scanLeg);
       pushEvent(events, seen, {

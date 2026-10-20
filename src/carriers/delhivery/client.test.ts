@@ -122,6 +122,34 @@ describe("createDelhiveryClient", () => {
     await expect(client.get("55540110035405")).rejects.toThrowError(/too large/);
   });
 
+  it("rejects a multi-byte body over 1 MB of UTF-8 bytes even when its code-unit length is under", async () => {
+    // '€' is 3 UTF-8 bytes / 1 UTF-16 code unit: 524_289 of them are
+    // 1_572_867 wire bytes but only 524_289 code units — a code-unit cap
+    // would wrongly accept this.
+    const { impl } = fakeFetch(
+      () => new Response("€".repeat(524_289), { status: 200 }),
+    );
+    const client = createDelhiveryClient({ fetchImpl: impl });
+    await expect(client.get("55540110035405")).rejects.toThrowError(/too large/);
+  });
+
+  it("rejects a streamed body over the cap when there is no content-length header", async () => {
+    const { impl } = fakeFetch(
+      () =>
+        new Response(
+          new ReadableStream<Uint8Array>({
+            start(controller) {
+              controller.enqueue(new Uint8Array(MAX_BODY_BYTES + 1));
+              controller.close();
+            },
+          }),
+          { status: 200 },
+        ),
+    );
+    const client = createDelhiveryClient({ fetchImpl: impl });
+    await expect(client.get("55540110035405")).rejects.toThrowError(/too large/);
+  });
+
   it("accepts a JSON body of exactly 1 MB", async () => {
     const prefix = '{"message":"';
     const suffix = '","statusCode":200,"data":[]}';

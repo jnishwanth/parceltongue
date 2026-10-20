@@ -3,7 +3,6 @@ import type { Stage, TerminalReason } from "../types.js";
 import {
   classifyStatus,
   FLOW_TOKEN,
-  isTerminalStage,
   normalizeStatusToken,
   withReturnLegOverride,
 } from "./status.js";
@@ -107,22 +106,5 @@ describe("withReturnLegOverride", () => {
       "in_transit",
     );
     expect(withReturnLegOverride(classifyStatus("LOST"), "return").stage).toBe("exception");
-  });
-});
-
-describe("isTerminalStage", () => {
-  it("covers exactly delivered/returned/exception", () => {
-    expect(isTerminalStage("delivered")).toBe(true);
-    expect(isTerminalStage("returned")).toBe(true);
-    expect(isTerminalStage("exception")).toBe(true);
-    for (const stage of [
-      "registered",
-      "accepted",
-      "in_transit",
-      "out_for_delivery",
-      "unknown",
-    ] satisfies Stage[]) {
-      expect(isTerminalStage(stage)).toBe(false);
-    }
   });
 });

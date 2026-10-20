@@ -104,10 +104,18 @@ export function createDelhiveryClient(
         throw new DelhiveryTransportError(`HTTP ${res.status}`);
       }
 
+      const contentLength = Number(res.headers.get("content-length"));
+      if (Number.isInteger(contentLength) && contentLength > MAX_BODY_BYTES) {
+        throw new DelhiveryTransportError(
+          `response too large (${contentLength} bytes > ${MAX_BODY_BYTES})`,
+        );
+      }
+
       let text: string;
       try {
-        text = await res.text();
+        text = await readTextWithByteCap(res, MAX_BODY_BYTES);
       } catch (err) {
+        if (err instanceof DelhiveryTransportError) throw err;
         throw new DelhiveryTransportError(`body read failed: ${describeError(err)}`);
       }
       if (text.length > MAX_BODY_BYTES) {
@@ -127,4 +135,37 @@ export function createDelhiveryClient(
 
 function describeError(err: unknown): string {
   return err instanceof Error ? `${err.name}: ${err.message}` : String(err);
+}
+
+/**
+ * Read the body as text, aborting the download the moment the accumulated
+ * UTF-8 byte count exceeds `maxBytes` — the cap must bound the download
+ * itself, not just the assembled string (whose length is UTF-16 code units,
+ * not bytes).
+ */
+async function readTextWithByteCap(res: Response, maxBytes: number): Promise<string> {
+  if (res.body === null) return "";
+  const reader = res.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    if (value === undefined) continue;
+    total += value.byteLength;
+    if (total > maxBytes) {
+      await reader.cancel().catch(() => undefined);
+      throw new DelhiveryTransportError(
+        `response too large (${total} bytes > ${maxBytes})`,
+      );
+    }
+    chunks.push(value);
+  }
+  const bytes = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return new TextDecoder().decode(bytes);
 }

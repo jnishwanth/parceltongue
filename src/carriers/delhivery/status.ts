@@ -74,7 +74,3 @@ export function withReturnLegOverride(
   }
   return classification;
 }
-
-export function isTerminalStage(stage: Stage): boolean {
-  return stage === "delivered" || stage === "returned" || stage === "exception";
-}

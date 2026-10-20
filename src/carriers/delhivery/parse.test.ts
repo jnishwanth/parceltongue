@@ -184,6 +184,34 @@ describe("parseDelhivery — return in transit (RETURNED flow token)", () => {
   });
 });
 
+describe("parseDelhivery — customer return (Returned flow keeps forward history)", () => {
+  it("marks the package on the return leg while still in transit (non-terminal)", async () => {
+    const pkg = okOutcome(await loadFixture("customer-return.json"), "0000000000004");
+    expect(pkg.leg).toBe("return"); // statusType RT + currentFlow Returned
+    expect(pkg.stage).toBe("in_transit");
+    expect(pkg.terminal).toBe(false);
+    expect(pkg.terminalReason).toBeNull();
+  });
+
+  it("keeps the forward Delivered scan forward (no rto override) and the RT scan on return", async () => {
+    const pkg = okOutcome(await loadFixture("customer-return.json"), "0000000000004");
+    const delivered = pkg.events.find((e) => e.description === "Delivered");
+    expect(delivered).toMatchObject({
+      occurredAt: "2026-03-02T13:00:00.000Z", // 18:30 IST
+      stage: "delivered",
+      leg: "forward",
+      isSummary: false,
+    });
+    const returnScan = pkg.events.find((e) => e.description === "In Transit" && e.leg === "return");
+    expect(returnScan).toMatchObject({
+      occurredAt: "2026-03-08T04:45:00.000Z", // 10:15 IST
+      stage: "in_transit",
+      leg: "return",
+      isSummary: false,
+    });
+  });
+});
+
 describe("parseDelhivery — RTO delivered (pitfall 5: delivered-to-seller)", () => {
   it("classifies a return-leg DELIVERED as returned/rto, not delivered", async () => {
     const pkg = okOutcome(await loadFixture("rto-delivered.json"), "0000000000002");
