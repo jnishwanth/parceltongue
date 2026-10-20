@@ -1,0 +1,6 @@
+😞 *0000000000002* — returned to sender — RTO
+✦ In Transit
+  Example\_Hub \(Example State\) · 5 Feb 9:15 AM
+✦ Delivered
+  Example\_Seller \(Example State\) · 10 Feb 11:30 AM
+👋 tracking stopped
