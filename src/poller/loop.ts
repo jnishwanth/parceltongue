@@ -10,7 +10,7 @@
  *   effective band is [interval, interval·(1+jitter)] — 15–18 min at
  *   defaults;
  * - at boot, parcels are staggered across one window (parcel i of n is
- *   due at boot + i·interval/n) so a fleet of N never hits the endpoint
+ *   due at boot + i·interval/(n−1)) so a fleet of N never hits the endpoint
  *   at one instant — fleet spread comes from that boot stagger plus the
  *   positive jitter;
  * - a parcel is never polled within one full interval of its last poll
@@ -384,6 +384,7 @@ export function createPoller(deps: PollerDeps, options: PollerOptions): Poller {
             await worker(awb);
           } catch (err) {
             log.error({ awb, err: errText(err) }, "poll worker crashed — continuing");
+            nextDueAt.set(awb, now() + rescheduleDelayMs());
           }
         }
       }),
