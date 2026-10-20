@@ -357,7 +357,7 @@ export function createPoller(deps: PollerDeps, options: PollerOptions): Poller {
       }
       case "network": {
         recordPoll(db, awb, toPollOutcome(result), tIso);
-        log.debug({ awb, message: result.message }, "poll: network error — silent retry next tick (PRD §8)");
+        log.debug({ awb, message: result.message }, "poll: network error — silent, next poll on schedule (PRD §8)");
         nextDueAt.set(awb, t + rescheduleDelayMs());
         break;
       }
