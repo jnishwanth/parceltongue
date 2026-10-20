@@ -228,7 +228,7 @@ export type PollOutcome =
  *     the streak for alerts/backoff)
  *   - network: poll accounting only — increment `polls`, set
  *     `last_polled_at`, leave `last_error` and `error_streak` untouched
- *     (PRD §8: silent retry next tick)
+ *     (PRD §8: silent — no alert, retried on the next scheduled poll)
  */
 export function recordPoll(
   db: DB,
