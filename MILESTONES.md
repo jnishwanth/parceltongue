@@ -158,9 +158,9 @@ Status legend: ✅ done · 🔜 in progress · ⬜ pending
     `notFound` sets `last_error` without bumping the streak (possible
     feed glitch — tell once, keep polling), `auth`/`schema` set
     `last_error` and increment `error_streak` (M4's alert-at-3/backoff
-    consumes it), `network` updates poll accounting only (silent retry
-    next tick). The M4 poller maps `CarrierResult` kinds onto this union;
-    the backoff policy itself stays in M4.
+    consumes it), `network` updates poll accounting only (silent — retried
+    on the next scheduled poll). The M4 poller maps `CarrierResult` kinds
+    onto this union; the backoff policy itself stays in M4.
   - `addPackage` returns false for an already-tracked AWB (PRD §8
     no-op, events untouched) and stores terminal state at add time
     (tracking an already-delivered parcel starts out of polling). When

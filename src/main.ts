@@ -6,10 +6,11 @@ import { openDb, schemaVersion, type DB } from "./db/db.js";
 /**
  * Bootstrap.
  *
- * M3 state: validates config, builds the logger, opens the SQLite database
+ * M4 state: validates config, builds the logger, opens the SQLite database
  * (creating the file + parent dir, applying migrations) and exits. The
- * real pipeline (db → poller → bot, PRD §6) completes in M4–M6; process
- * keep-alive comes with the bot (M6).
+ * poller module exists (src/poller) but is not started here — wiring the
+ * pipeline (db → poller → bot, PRD §6) and process keep-alive come with
+ * the bot (M6).
  */
 function main(): void {
   // Node 22 built-in .env loading; does not override already-set vars.

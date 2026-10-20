@@ -200,14 +200,14 @@ Notes:
 
 ## 8. Poller & notification rules
 
-- **Interval:** every 15 minutes, per-parcel jitter ±20%, start staggered so a fleet of N parcels spreads across the window.
+- **Interval:** every 15 minutes, per-parcel jitter ±20% floored at one full interval — delays land in 15–18 min at defaults, so no parcel is polled twice within 15 min (§9 ToS note) — start staggered so a fleet of N parcels spreads across the window.
 - **Concurrency:** ≤ 3 in-flight requests; timeout 15 s; max response 1 MB.
 - **Terminal:** stage ∈ {delivered, returned, exception} → `terminal=1`, excluded from polling, final message sent.
 - **Notify on:** *all* new status changes (your choice). One bundled message per parcel per poll. A brand-new parcel's *initial* snapshot is also the first (only) message at add time — subsequent polls only notify on genuinely new events, so a 5-scan backlog that appears at once is one message, not five.
 - **Error handling:**
   - `data: []` + "invalid AWB…" on a parcel we already track → tell you once, mark `last_error`, keep polling (rare: could be a feed glitch).
   - HTTP 401 / schema break → increment `error_streak`; at streak 3 send you one "Delhivery endpoint looks broken — pausing" alert, then back off 1 h → 6 h → 24 h. No per-poll spam.
-  - Network blip → silent retry next tick.
+  - Network blip → silent: no alert, no streak change; the parcel retries on its next scheduled poll.
 - **No dedupe across parcels:** each AWB is independent; a repeated AWB in `/track` is a no-op with a friendly "already tracking" reply.
 
 ## 9. Limitations (documented, accepted)
@@ -265,16 +265,7 @@ parceltongue/
 
 ### Milestones
 
-| # | Item | Output | Est. |
-|---|---|---|---|
-| M1 | Scaffold: TS project, config, pino, lint, vitest | compiles, `pnpm dev` boots | 0.5 d |
-| **M2** | **Delhivery adapter: client + parse + status map + fixtures + unit tests** | `pnpm live <awb>` prints normalized status from real endpoint — *highest risk, do first* | 1 d |
-| M3 | DB: schema, repo, migrations | insert/diff queries tested against temp DB | 0.5 d |
-| M4 | Poller: tick loop, jitter, backoff, terminal handling | pollable with fake adapter; streak alert path tested | 0.5 d |
-| M5 | Notify: diff + message formatting | snapshot / update / terminal message fixtures | 0.5 d |
-| M6 | Bot: grammY, whitelist, all 6 commands | add/list/status/remove via real Telegram | 0.5 d |
-| M7 | Dockerfile + compose + README (BotFather walkthrough) | one-command deploy | 0.25 d |
-| M8 | E2E soak: track 2–3 real parcels through delivery; tune message noise | PRD §5 flows verified in your chat | ongoing |
+Progress tracked in [`MILESTONES.md`](MILESTONES.md).
 
 ### Definition of done
 
