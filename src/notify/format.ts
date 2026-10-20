@@ -46,6 +46,14 @@ const TELEGRAM_MESSAGE_LIMIT = 4096;
  */
 const EVENT_BLOCK_BUDGET = TELEGRAM_MESSAGE_LIMIT - 256;
 
+/**
+ * Cap for rendered carrier error text — the parser's own message cap
+ * (`cleanString(…, 200)` in parse.ts), applied at the render boundary too
+ * because `lastError` reaches this module unbounded (the schema
+ * identity-mismatch message joins every AWB in the feed's data array).
+ */
+const RENDERED_ERROR_CAP = 200;
+
 const IST_OFFSET_MS = (5 * 60 + 30) * 60_000;
 const MONTHS = [
   "Jan", "Feb", "Mar", "Apr", "May", "Jun",
@@ -281,7 +289,11 @@ export function formatEndpointBrokenMessage(
     `${n.streak} polls in a row failed`,
   ];
   if (n.lastError !== null) {
-    lines.push(`Last error: ${mdv2Escape(n.lastError)}`);
+    const capped =
+      n.lastError.length > RENDERED_ERROR_CAP
+        ? `${n.lastError.slice(0, RENDERED_ERROR_CAP)}…`
+        : n.lastError;
+    lines.push(`Last error: ${mdv2Escape(capped)}`);
   }
   lines.push(`Pausing this parcel for ${formatDurationMs(n.pauseMs)}`);
   return lines.join("\n");

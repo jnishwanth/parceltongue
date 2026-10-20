@@ -395,6 +395,29 @@ describe("degenerate inputs", () => {
       ].join("\n"),
     );
   });
+
+  it("endpointBroken caps a multi-KB lastError (schema identity-mismatch shape) so the alert stays sendable", () => {
+    // The parser's schema message joins every AWB in the feed's data array
+    // uncapped; rendered raw it would blow past Telegram's 4096 limit and
+    // M4's safeEmit would silently drop the once-per-episode alert.
+    const awbs = Array.from({ length: 500 }, (_, i) => `555${String(i).padStart(11, "0")}`).join(", ");
+    const lastError = `identity mismatch: requested ${AWB}, feed gave [${awbs}]`;
+    expect(lastError.length).toBeGreaterThan(4096);
+    const n: Extract<PollNotification, { kind: "endpointBroken" }> = {
+      kind: "endpointBroken",
+      awb: AWB,
+      streak: 3,
+      pauseMs: 60 * 60 * 1000,
+      lastError,
+    };
+    const out = formatEndpointBrokenMessage(n);
+    expect(out.length).toBeLessThanOrEqual(4096);
+    const errorLine = out.split("\n").find((l) => l.startsWith("Last error: "));
+    expect(errorLine).toBeDefined();
+    expect(errorLine!.startsWith(`Last error: identity mismatch: requested ${AWB}, feed gave `)).toBe(true);
+    expect(errorLine!.endsWith("…")).toBe(true);
+    expect(errorLine!.length).toBeLessThan(450); // label + 200 raw chars, escape-expanded
+  });
 });
 
 // ---------------------------------------------------------------------------
