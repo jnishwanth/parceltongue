@@ -255,6 +255,7 @@ parceltongue/
 └── src/
     ├── config.ts                 # env parsing + validation
     ├── main.ts                   # bootstrap: db → poller → bot
+    ├── live.ts                   # smoke CLI (M2): pnpm live <awb> → normalized JSON
     ├── db/
     │   ├── schema.sql            # §7
     │   ├── db.ts                 # better-sqlite3 init, pragma, migrations
@@ -262,11 +263,11 @@ parceltongue/
     ├── carriers/
     │   ├── types.ts              # CarrierAdapter interface: track(awb): CarrierResult
     │   └── delhivery/
-    │       ├── client.ts         # GET with Origin/Referer, timeout, 401/404 detection
+    │       ├── client.ts         # GET with Origin/Referer/Accept, 15 s timeout, 1 MB cap; 401→auth, other non-2xx→transport
     │       ├── parse.ts          # response → {stage, events[], eta, city, …}; identity check
     │       ├── status.ts         # token → stage map (§4.4)
-    │       └── fixtures/*.json   # recorded live responses: in-transit, delivered, RTO, lost,
-    │                             #   invalid-AWB, no-timestamp scan, freight
+    │       ├── index.ts          # CarrierAdapter implementation (delhiveryAdapter)
+    │       └── fixtures/*.json   # endpoint responses; provenance per file in fixtures/README.md
     ├── poller/
     │   ├── loop.ts               # 15-min tick, jitter, stagger, concurrency cap
     │   └── backoff.ts            # error_streak → pause durations
@@ -282,8 +283,8 @@ parceltongue/
 
 | # | Item | Output | Est. |
 |---|---|---|---|
-| M1 | Scaffold: TS project, config, pino, lint, vitest | compiles, `npm run dev` boots | 0.5 d |
-| **M2** | **Delhivery adapter: client + parse + status map + fixtures + unit tests** | `npm run live <awb>` prints normalized status from real endpoint — *highest risk, do first* | 1 d |
+| M1 | Scaffold: TS project, config, pino, lint, vitest | compiles, `pnpm dev` boots | 0.5 d |
+| **M2** | **Delhivery adapter: client + parse + status map + fixtures + unit tests** | `pnpm live <awb>` prints normalized status from real endpoint — *highest risk, do first* | 1 d |
 | M3 | DB: schema, repo, migrations | insert/diff queries tested against temp DB | 0.5 d |
 | M4 | Poller: tick loop, jitter, backoff, terminal handling | pollable with fake adapter; streak alert path tested | 0.5 d |
 | M5 | Notify: diff + message formatting | snapshot / update / terminal message fixtures | 0.5 d |
@@ -305,7 +306,7 @@ parceltongue/
 2. **Unit — status map:** all §4.4 tokens + unknown-token fallback.
 3. **Unit — diff:** re-poll same payload → zero new events; add a scan → exactly one.
 4. **Unit — backoff:** streak 1/2/3 → correct pauses and alert once.
-5. **Live smoke:** `npm run live` against the real endpoint with a real AWB (manual, CI-excluded).
+5. **Live smoke:** `pnpm live` against the real endpoint with a real AWB (manual, CI-excluded).
 6. **E2E (M8):** real bot, real parcels, full lifecycle to delivery; plus a fake AWB (expect the "invalid" message path).
 
 ## 13. Open questions (don't block M1–M3)

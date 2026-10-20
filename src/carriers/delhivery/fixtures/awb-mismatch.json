@@ -1,0 +1,15 @@
+{
+  "statusCode": 200,
+  "message": "Success",
+  "data": [
+    {
+      "awb": "9999999999999",
+      "status": {
+        "status": "IN_TRANSIT",
+        "statusDateTime": "2026-10-20T06:45:00",
+        "statusType": "UD"
+      },
+      "trackingStates": []
+    }
+  ]
+}
