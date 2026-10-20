@@ -256,8 +256,8 @@ parceltongue/
     │   ├── loop.ts               # 15-min tick, jitter, stagger, concurrency cap
     │   └── backoff.ts            # error_streak → pause durations
     ├── notify/
-    │   ├── diff.ts               # fresh events − stored events = new events
-    │   └── format.ts             # Telegram text (markdown), per §5 examples
+    │   ├── format.ts             # PollNotification → Telegram MarkdownV2 text, per §5 examples
+    │   └── fixtures/*.txt        # pinned expected messages; provenance per file in fixtures/README.md
     └── bot/
         ├── bot.ts                # grammY, long-poll, owner-whitelist middleware
         └── commands.ts           # /start /help /track /list /status /remove

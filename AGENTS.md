@@ -43,7 +43,7 @@ src/
   carriers/types.ts    CarrierAdapter interface            (M2)
   carriers/delhivery/  client, parse, status, fixtures/    (M2)
   poller/              loop, backoff                       (M4)
-  notify/              diff, format                        (M5)
+  notify/              format, fixtures/                   (M5)
   bot/                 bot.ts (grammY), commands.ts        (M6)
 ```
 

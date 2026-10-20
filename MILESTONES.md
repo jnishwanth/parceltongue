@@ -13,7 +13,7 @@ Status legend: ✅ done · 🔜 in progress · ⬜ pending
 | M2 | **Delhivery adapter: client + parse + status map + fixtures + unit tests**       | ✅ done        | 2026-10-20 | `pnpm live 55540110035405` → real endpoint returned `kind: ok` (stage in_transit, IST→UTC with ms, shallow feed as documented); bogus AWB → `notFound`/exit 1; typecheck+lint+97/97 tests green; 10 fixtures w/ provenance README |
 | M3 | DB: schema, repo, migrations                                                      | ✅ done        | 2026-10-20 | `src/db/` shipped (schema.sql v1, db.ts WAL+FK+migrations, carrier-agnostic repo.ts); typecheck+lint+124/124 tests green (23 new at M3, +4 net from review round 1; incl. PRD §12.3 diff + NULL-dedupe caveat); `pnpm dev` creates+migrates `./data/parceltongue.db` (v1) and reopens idempotently; `pnpm build` copies schema.sql into dist and compiled `main.js` boots |
 | M4 | Poller: tick loop, jitter, backoff, terminal handling                             | ✅ done        | 2026-10-20 | `src/poller/` shipped (loop.ts: boot stagger across the window, per-poll jitter floored at one interval (effective 15–18 min, PRD §9), concurrency ≤ 3, PRD §9 cadence floor, terminal exclusion; backoff.ts: alert once at streak 3, then 1 h → 6 h → 24 h); pollable with fake adapter — 20 new tests incl. streak-alert path, pause-across-restart, concurrency cap, emit/throw resilience; typecheck+lint+144/144 green; `pnpm build` emits `dist/poller/` |
-| M5 | Notify: diff + message formatting                                                | ✅ done        | 2026-10-21 | `src/notify/format.ts` — all 4 `PollNotification` kinds + add-time snapshot → MarkdownV2 text; 7 pinned message fixtures (snapshot/update/terminal×3/two alerts, PRD §5 shapes); typecheck+lint+166/166 tests green (22 new); diff stays `repo.insertEvents` (M3) — no separate `notify/diff.ts`, see decisions; `pnpm build` emits `dist/notify/` |
+| M5 | Notify: diff + message formatting                                                | ✅ done        | 2026-10-21 | `src/notify/format.ts` — all 4 `PollNotification` kinds + add-time snapshot → MarkdownV2 text; 7 pinned message fixtures (snapshot/update/terminal×3/two alerts, PRD §5 shapes); typecheck+lint+167/167 tests green (23 new, incl. 1 backslash-escape hardening from review); diff stays `repo.insertEvents` (M3) — no separate `notify/diff.ts`, see decisions; `pnpm build` emits `dist/notify/` |
 | M6 | Bot: grammY, whitelist, all 6 commands                                            | ⬜ pending   | —          | Output: add/list/status/remove via real Telegram |
 | M7 | Dockerfile + compose + README (BotFather walkthrough)                             | ⬜ pending   | —          | Output: one-command deploy |
 | M8 | E2E soak: track 2–3 real parcels through delivery; tune message noise            | ⬜ pending   | —          | Ongoing. PRD §5 flows verified in the owner's chat |
@@ -37,13 +37,16 @@ Status legend: ✅ done · 🔜 in progress · ⬜ pending
   Utilities: `formatWhen` (Asia/Kolkata wall-clock from stored UTC ISO),
   `formatDurationMs` (the backoff tiers), `mdv2Escape` (Telegram MarkdownV2).
   7 pinned message fixtures in `src/notify/fixtures/` (+ provenance
-  `README.md`) and 22 tests in `format.test.ts` — inputs are the M2 carrier
+  `README.md`) and 23 tests in `format.test.ts` — inputs are the M2 carrier
   fixtures run through the real `parseDelhivery` (no network) with
   notifications assembled the way the M4 loop assembles them; `NOW` fixed at
   `2026-10-20T12:00:00Z` in the tests.
-- **Evidence:** `pnpm typecheck` / `pnpm lint` clean; `pnpm test` 166/166
-  (22 new). All seven fixtures pinned: snapshot from `in-transit.json`
-  (PRD §4.2 live-capture AWB, mirrors the PRD §5 snapshot example), bundled
+- **Evidence:** `pnpm typecheck` / `pnpm lint` clean; `pnpm test` 167/167
+  (23 new — incl. a review-round hardening: `mdv2Escape` now escapes
+  backslash too, so a `\` in feed text cannot defeat the escaping of the
+  other specials or break the parse). All seven fixtures pinned: snapshot
+  from `in-transit.json` (PRD §4.2 live-capture AWB, mirrors the PRD §5
+  snapshot example), bundled
   update mirroring the PRD §5 passive-update example (same times/cities/ETA;
   event descriptions are the feed's own scan labels), terminal
   delivered/RTO/lost from `delivered.json` / `rto-delivered.json` /
@@ -68,7 +71,8 @@ Status legend: ✅ done · 🔜 in progress · ⬜ pending
     the NULL-coalesced dedupe semantics; PRD §12.3's diff tests were
     exercised against the DB in M3 (re-poll same payload → 0 new; +1 scan →
     1 new).
-  - **MarkdownV2 with escaping** (PRD §11 says "Telegram text (markdown)"):
+  - **MarkdownV2 with escaping** (PRD §11 originally said "Telegram text
+    (markdown)"; its tree now records MarkdownV2):
     the only markup is the bold AWB — pure digits, the adapter's contract —
     every carrier-controlled string (descriptions, locations, status text,
     ETA, error messages) goes through `mdv2Escape`, and the template
