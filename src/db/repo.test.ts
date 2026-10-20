@@ -92,6 +92,42 @@ describe("addPackage", () => {
     }
   });
 
+  it("persists add-time events and a follow-up insertEvents returns 0 new", () => {
+    const db = freshDb();
+    try {
+      const e1 = ev({ description: "Picked up" });
+      const e2 = ev({ description: "In Transit", occurredAt: "2026-10-19T16:00:00.000Z" });
+      const created = addPackage(db, pkg({ events: [e1, e2] }), null, T.add);
+      expect(created).toBe(true);
+
+      const rows = eventsForAwb(db, AWB);
+      expect(rows).toHaveLength(2);
+      expect(rows[0]!.description).toBe("Picked up");
+      expect(rows[1]!.description).toBe("In Transit");
+      expect(rows[0]!.firstSeenAt).toBe(T.add);
+      expect(rows[1]!.firstSeenAt).toBe(T.add);
+
+      const fresh = insertEvents(db, AWB, [e1, e2], T.poll1);
+      expect(fresh).toEqual([]);
+      expect(eventsForAwb(db, AWB)).toHaveLength(2);
+    } finally {
+      db.close();
+    }
+  });
+
+  it("no-op re-add does not change event count", () => {
+    const db = freshDb();
+    try {
+      addPackage(db, pkg({ events: [ev()] }), null, T.add);
+      expect(eventsForAwb(db, AWB)).toHaveLength(1);
+      const again = addPackage(db, pkg({ events: [ev({ description: "Different" })] }), null, T.poll1);
+      expect(again).toBe(false);
+      expect(eventsForAwb(db, AWB)).toHaveLength(1);
+    } finally {
+      db.close();
+    }
+  });
+
   it("is a no-op for an already-tracked AWB (PRD §8)", () => {
     const db = freshDb();
     try {
@@ -157,17 +193,17 @@ describe("recordPoll", () => {
     }
   });
 
-  it("keeps the snapshot and bumps the streak on failure", () => {
+  it("notFound marks last_error but does not increment error_streak", () => {
     const db = freshDb();
     try {
       track(db);
       recordPoll(db, AWB, { ok: true, pkg: pkg() }, T.poll1);
-      recordPoll(db, AWB, { ok: false, message: "invalid AWB or very old package" }, T.poll2);
+      recordPoll(db, AWB, { ok: false, kind: "notFound", message: "invalid AWB or very old package" }, T.poll2);
 
       const row = getPackage(db, AWB)!;
       expect(row.currentStage).toBe("in_transit"); // unchanged
       expect(row.lastError).toBe("invalid AWB or very old package");
-      expect(row.errorStreak).toBe(1);
+      expect(row.errorStreak).toBe(0);
       expect(row.polls).toBe(2);
       expect(row.lastPolledAt).toBe(T.poll2);
     } finally {
@@ -175,12 +211,48 @@ describe("recordPoll", () => {
     }
   });
 
-  it("accumulates the streak across failures and resets it on success", () => {
+  it("auth increments error_streak and sets last_error", () => {
     const db = freshDb();
     try {
       track(db);
-      recordPoll(db, AWB, { ok: false, message: "boom 1" }, T.poll1);
-      recordPoll(db, AWB, { ok: false, message: "boom 2" }, T.poll2);
+      recordPoll(db, AWB, { ok: false, kind: "auth", message: "401" }, T.poll1);
+      recordPoll(db, AWB, { ok: false, kind: "auth", message: "401 again" }, T.poll2);
+      const row = getPackage(db, AWB)!;
+      expect(row.errorStreak).toBe(2);
+      expect(row.lastError).toBe("401 again");
+      expect(row.polls).toBe(2);
+    } finally {
+      db.close();
+    }
+  });
+
+  it("network updates poll accounting only (leaves last_error and streak untouched)", () => {
+    const db = freshDb();
+    try {
+      track(db);
+      recordPoll(db, AWB, { ok: false, kind: "auth", message: "401" }, T.poll1);
+      const afterAuth = getPackage(db, AWB)!;
+      expect(afterAuth.errorStreak).toBe(1);
+      expect(afterAuth.lastError).toBe("401");
+      expect(afterAuth.polls).toBe(1);
+
+      recordPoll(db, AWB, { ok: false, kind: "network", message: "timeout" }, T.poll2);
+      const afterNet = getPackage(db, AWB)!;
+      expect(afterNet.errorStreak).toBe(1);
+      expect(afterNet.lastError).toBe("401");
+      expect(afterNet.polls).toBe(2);
+      expect(afterNet.lastPolledAt).toBe(T.poll2);
+    } finally {
+      db.close();
+    }
+  });
+
+  it("accumulates the streak across auth/schema failures and resets it on success", () => {
+    const db = freshDb();
+    try {
+      track(db);
+      recordPoll(db, AWB, { ok: false, kind: "auth", message: "boom 1" }, T.poll1);
+      recordPoll(db, AWB, { ok: false, kind: "schema", message: "boom 2" }, T.poll2);
       expect(getPackage(db, AWB)!.errorStreak).toBe(2);
       expect(getPackage(db, AWB)!.lastError).toBe("boom 2");
 

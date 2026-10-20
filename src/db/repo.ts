@@ -132,9 +132,11 @@ function mapEventRow(r: EventDbRow): EventRow {
 
 /**
  * Start tracking a parcel (the M6 `/track` path): inserts the package with
- * its first snapshot. Returns false — a no-op, the parcel is already
- * tracked (PRD §8) — when the AWB already exists. `now` (UTC ISO) is the
- * add time.
+ * its first snapshot. When the package is newly created, add-time events
+ * from the snapshot are also persisted in the same transaction (idempotent
+ * via the events dedupe index). If the AWB already exists, this is a no-op
+ * and returns false (PRD §8). A subsequent `insertEvents` call with the same
+ * payload returns 0 new events. `now` (UTC ISO) is the add time.
  */
 export function addPackage(
   db: DB,
@@ -144,26 +146,31 @@ export function addPackage(
 ): boolean {
   if (getPackage(db, pkg.awb) !== null) return false;
 
-  db.prepare(
-    `INSERT INTO packages (
-       awb, added_at, source_link, dest_city, reference_no, product_type,
-       current_stage, status_text, status_at, delivery_eta,
-       terminal, terminal_reason
-     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-  ).run(
-    pkg.awb,
-    now,
-    sourceLink,
-    pkg.destCity,
-    pkg.referenceNo,
-    pkg.productType,
-    pkg.stage,
-    pkg.statusText,
-    pkg.statusAt,
-    pkg.deliveryEta,
-    pkg.terminal ? 1 : 0,
-    pkg.terminal ? pkg.terminalReason : null,
-  );
+  const tx = db.transaction(() => {
+    db.prepare(
+      `INSERT INTO packages (
+         awb, added_at, source_link, dest_city, reference_no, product_type,
+         current_stage, status_text, status_at, delivery_eta,
+         terminal, terminal_reason
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ).run(
+      pkg.awb,
+      now,
+      sourceLink,
+      pkg.destCity,
+      pkg.referenceNo,
+      pkg.productType,
+      pkg.stage,
+      pkg.statusText,
+      pkg.statusAt,
+      pkg.deliveryEta,
+      pkg.terminal ? 1 : 0,
+      pkg.terminal ? pkg.terminalReason : null,
+    );
+
+    insertEvents(db, pkg.awb, pkg.events, now);
+  });
+  tx();
   return true;
 }
 
@@ -198,18 +205,29 @@ export function activePackages(db: DB): PackageRow[] {
   return rows.map(mapPackageRow);
 }
 
+/**
+ * Failure kinds for poll outcomes, as consumed by M4 backoff/alerting.
+ */
+export type PollFailureKind = "notFound" | "auth" | "schema" | "network";
+
 /** Outcome of one poll: the fresh snapshot (`ok`) or why it failed. */
 export type PollOutcome =
   | { ok: true; pkg: CarrierPackage }
-  | { ok: false; message: string };
+  | { ok: false; kind: PollFailureKind; message: string };
 
 /**
  * Record one poll for a tracked parcel (`now` = UTC ISO):
  * - success: refresh the snapshot columns, increment `polls`, reset
  *   `error_streak`/`last_error`, and apply terminal state when the stage is
  *   terminal (PRD §8);
- * - failure: keep the snapshot, set `last_error`, increment `error_streak`
- *   (the M4 backoff policy consumes the streak).
+ * - failure:
+ *   - notFound: set `last_error`, do NOT increment `error_streak` (PRD §8:
+ *     possible feed glitch, tell once/mark and keep polling)
+ *   - auth/schema: set `last_error`, increment `error_streak` (M4 consumes
+ *     the streak for alerts/backoff)
+ *   - network: poll accounting only — increment `polls`, set
+ *     `last_polled_at`, leave `last_error` and `error_streak` untouched
+ *     (PRD §8: silent retry next tick)
  */
 export function recordPoll(
   db: DB,
@@ -248,16 +266,39 @@ export function recordPoll(
       now,
       awb,
     );
-  } else {
+    return;
+  }
+
+  if (outcome.kind === "network") {
+    db.prepare(
+      `UPDATE packages SET
+         polls          = polls + 1,
+         last_polled_at = ?
+       WHERE awb = ?`,
+    ).run(now, awb);
+    return;
+  }
+
+  if (outcome.kind === "notFound") {
     db.prepare(
       `UPDATE packages SET
          polls          = polls + 1,
          last_polled_at = ?,
-         last_error     = ?,
-         error_streak   = error_streak + 1
+         last_error     = ?
        WHERE awb = ?`,
     ).run(now, outcome.message, awb);
+    return;
   }
+
+  // auth or schema
+  db.prepare(
+    `UPDATE packages SET
+       polls          = polls + 1,
+       last_polled_at = ?,
+       last_error     = ?,
+       error_streak   = error_streak + 1
+     WHERE awb = ?`,
+  ).run(now, outcome.message, awb);
 }
 
 // ---------------------------------------------------------------------------
