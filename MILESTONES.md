@@ -12,7 +12,7 @@ Status legend: ✅ done · 🔜 in progress · ⬜ pending
 | M1 | Scaffold: TS project, config, pino, lint, vitest                                 | ✅ done        | 2026-10-19 | Fresh `pnpm install` clean; typecheck+lint+9/9 tests green; `pnpm dev` boots (exits after boot log — keep-alive comes with M6); config error path exits 1 with all problems listed |
 | M2 | **Delhivery adapter: client + parse + status map + fixtures + unit tests**       | ✅ done        | 2026-10-20 | `pnpm live 55540110035405` → real endpoint returned `kind: ok` (stage in_transit, IST→UTC with ms, shallow feed as documented); bogus AWB → `notFound`/exit 1; typecheck+lint+97/97 tests green; 10 fixtures w/ provenance README |
 | M3 | DB: schema, repo, migrations                                                      | ✅ done        | 2026-10-20 | `src/db/` shipped (schema.sql v1, db.ts WAL+FK+migrations, carrier-agnostic repo.ts); typecheck+lint+124/124 tests green (23 new at M3, +4 net from review round 1; incl. PRD §12.3 diff + NULL-dedupe caveat); `pnpm dev` creates+migrates `./data/parceltongue.db` (v1) and reopens idempotently; `pnpm build` copies schema.sql into dist and compiled `main.js` boots |
-| M4 | Poller: tick loop, jitter, backoff, terminal handling                             | ⬜ pending   | —          | Output: pollable with fake adapter; streak-alert path tested |
+| M4 | Poller: tick loop, jitter, backoff, terminal handling                             | ✅ done        | 2026-10-20 | `src/poller/` shipped (loop.ts: boot stagger across the window, ±20% jitter, concurrency ≤ 3, PRD §9 cadence floor, terminal exclusion; backoff.ts: alert once at streak 3, then 1 h → 6 h → 24 h); pollable with fake adapter — 19 new tests incl. streak-alert path, pause-across-restart, concurrency cap, emit/throw resilience; typecheck+lint+143/143 green; `pnpm build` emits `dist/poller/` |
 | M5 | Notify: diff + message formatting                                                 | ⬜ pending   | —          | Output: snapshot / update / terminal message fixtures |
 | M6 | Bot: grammY, whitelist, all 6 commands                                            | ⬜ pending   | —          | Output: add/list/status/remove via real Telegram |
 | M7 | Dockerfile + compose + README (BotFather walkthrough)                             | ⬜ pending   | —          | Output: one-command deploy |
@@ -22,6 +22,79 @@ Status legend: ✅ done · 🔜 in progress · ⬜ pending
 
 <!-- Newest entry first. Each entry: date, milestone, what shipped, evidence
      (test/typecheck/lint results, key commands), anything deferred. -->
+
+### 2026-10-20 — M4 done: Poller (tick loop, jitter, backoff, terminal handling)
+
+- **Shipped:** `src/poller/backoff.ts` (`ALERT_STREAK = 3`; `backoffMs(streak)`:
+  < 3 → 0, 3 → 1 h, 4 → 6 h, ≥ 5 → 24 h plateau); `src/poller/loop.ts`
+  (`createPoller`: per-parcel next-due schedule, boot stagger across one
+  window, ±20% jitter per poll, concurrency ≤ 3, `PollNotification` union
+  `update | terminal | endpointBroken | notFound` as the M4→M5 contract,
+  idempotent `start`/`stop`, exported `tick`); 19 tests (17 in
+  `loop.test.ts`, 2 in `backoff.test.ts`) — fake adapter, fake clock +
+  fake timers, in-memory DB, no network.
+- **Evidence:** `pnpm typecheck` / `pnpm lint` clean; `pnpm test` 143/143
+  (19 new). Test plan §12.4 verified: auth failures → no alert at streak
+  1–2, exactly one `endpointBroken` at streak 3 (carrying `pauseMs = 1 h`),
+  no re-alert at streak 4/5; pause boundaries observed on the clock (no 4th
+  poll before 45 min + 1 h, no 5th before + 6 h); a success resets the
+  streak and a later break re-arms a fresh alert. Terminal: one
+  `terminal` notification carrying the new events, parcel drops out of
+  `activePackages` and is never polled again. notFound: "tell once" per
+  episode (repeat notFounds stay quiet, a clean poll re-arms the tell),
+  `error_streak` untouched. network: silent, poll accounting proceeds.
+  Concurrency: 5 parcels due at once → max in-flight exactly 3 (and 2 with
+  `maxConcurrent: 2`). Stagger: a 3-parcel fleet polls at boot / boot + 7.5
+  min / boot + 15 min; a restart never re-polls within 15 min of the last
+  poll (PRD §9); a backoff parcel stays paused across a restart (derived
+  from `last_polled_at` + `error_streak`) and restart mid-pause does not
+  re-alert. Resilience: an emit failure is swallowed and the cadence
+  continues; an adapter contract-violation throw is logged, the poll is not
+  recorded, the cadence continues; `start` idempotent, `stop` clears the
+  timer. `pnpm dev` with env → pino boot line, exit 0 (poller not started —
+  see decisions); `pnpm build` → `dist/poller/{loop.js,backoff.js}`,
+  `node dist/main.js` behaves as before.
+- **Decisions:**
+  - **Alert-once with no extra state:** the streak only moves +1 per
+    failure and resets to 0 on success, so "post-poll streak === 3" is true
+    exactly once per break episode — that is the "tell once" gate (and the
+    re-arm for a new episode). A restart at streak ≥ 3 does not re-alert:
+    the alert belongs to the episode that reached 3.
+  - **Pause is derived, never stored:** next-eligible-poll =
+    `last_polled_at + backoffMs(streak)`; both inputs are persisted, so a
+    restart mid-pause resumes the pause exactly (tested). Tiers: 3 → 1 h,
+    4 → 6 h, ≥ 5 → 24 h plateau — a paused parcel retries exactly once per
+    pause and steps up a tier per continued failure (the streak grows only
+    while polls actually fail).
+  - **Cadence floor (PRD §9 ToS note):** a parcel is never polled within
+    one interval of its last poll, including across restarts. A fresh
+    parcel's first poll is ≈ one interval after add (jittered) — the
+    add-time snapshot is its first message (PRD §8).
+  - **Poll time is anchored to start:** `recordPoll` and the reschedule use
+    the tick instant that found the parcel due, not when the (≤ 15 s)
+    adapter call resolves — the cadence is poll-start to poll-start.
+  - **notFound "tell once"** = first notFound after a clean
+    `last_error`; consecutive notFounds stay quiet; a success ends the
+    episode.
+  - **Loop skeleton:** the timer sleeps until the earliest due parcel,
+    capped at a 60 s heartbeat (`maxCheckDelayMs`) so parcels added after
+    start (M6 `/track`) are noticed within a minute; with no active parcels
+    it is a 60 s idle check (one cheap query).
+  - **`PollNotification` is the M4→M5 boundary** (exported from
+    `loop.ts`): `update` (the bundled new events + package row), `terminal`
+    (reason + new events), `endpointBroken` (streak + `pauseMs`),
+    `notFound`. M5's `format.ts` consumes it; M6's bot sends it. The
+    carrier's `CarrierResult` is mapped onto the repo's `PollOutcome`
+    (`toPollOutcome`) — the M3 contract is unchanged.
+  - **main.ts deliberately not wired** (besides fixing the stale
+    milestone pointer in the boot log): the poller's `emit` has no sink
+    until the bot exists, so main.ts assembles db → poller → bot and the
+    keep-alive lands with M6, as AGENTS.md promises. `pnpm dev` therefore
+    still exits after the boot log.
+- **Deferred to M6:** wire `createPoller` into `main.ts` (db → poller →
+  bot) with the Telegram bot as the `emit` sink; process keep-alive and
+  graceful `stop()` on SIGINT. The loop already seeds parcels added after
+  start, so `/track` needs no poller-side change.
 
 ### 2026-10-20 — M3 done: DB (schema, repo, migrations)
 

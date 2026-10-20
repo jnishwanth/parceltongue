@@ -41,7 +41,7 @@ function main(): void {
       pollIntervalMin: cfg.pollIntervalMin,
       logLevel: cfg.logLevel,
     },
-    "parceltongue booting (M3: db wired)",
+    "parceltongue booting (M4: db + poller module; wired together with the bot in M6)",
   );
 
   let db: DB;
@@ -58,7 +58,7 @@ function main(): void {
 
   db.close();
   log.info(
-    "poller/bot not wired yet — see MILESTONES.md (next: M4 poller)",
+    "poller not started yet — emit sink + keep-alive come with the bot (M6); see MILESTONES.md",
   );
 }
 
