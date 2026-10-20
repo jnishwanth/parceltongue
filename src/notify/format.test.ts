@@ -348,6 +348,37 @@ describe("degenerate inputs", () => {
     expect(lines[MAX_EVENTS_PER_MESSAGE + 1]).toBe("… and 5 more");
   });
 
+  it("a worst-case parse-legal backlog (200-char labels, 160-char locations) stays under Telegram's 4096 limit", () => {
+    // The parser's own caps: descriptions 200 chars, locations 160 — the
+    // count cap alone would render a 7709-char message here.
+    const label = "L".repeat(200);
+    const location = "M".repeat(160);
+    const n: Extract<PollNotification, { kind: "update" }> = {
+      kind: "update",
+      pkg: row({ deliveryEta: null }),
+      events: Array.from({ length: 25 }, () => ev({ description: label, location })),
+    };
+    const out = formatUpdateMessage(n, NOW);
+    const lines = out.split("\n");
+    const shown = lines.filter((l) => l.startsWith("✦")).length;
+    expect(out.length).toBeLessThanOrEqual(4096);
+    expect(shown).toBeGreaterThan(0);
+    expect(shown).toBeLessThanOrEqual(MAX_EVENTS_PER_MESSAGE);
+    expect(lines.at(-1)).toBe(`… and ${25 - shown} more`);
+  });
+
+  it("a worst-case terminal message stays under the limit (header + footer included)", () => {
+    const label = "L".repeat(200);
+    const location = "M".repeat(160);
+    const n: Extract<PollNotification, { kind: "terminal" }> = {
+      kind: "terminal",
+      pkg: row(),
+      reason: "rto",
+      events: Array.from({ length: 25 }, () => ev({ description: label, location })),
+    };
+    expect(formatTerminalMessage(n, NOW).length).toBeLessThanOrEqual(4096);
+  });
+
   it("endpointBroken omits the detail line without a last error", () => {
     const n: Extract<PollNotification, { kind: "endpointBroken" }> = {
       kind: "endpointBroken",

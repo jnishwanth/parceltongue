@@ -19,9 +19,11 @@
  *
  * Bundling (PRD §8): one message per parcel per poll — the `events` array
  * (the fresh parse minus what the DB already has, computed by
- * `insertEvents` in M3) is rendered as a block, capped at
- * `MAX_EVENTS_PER_MESSAGE` lines so a huge backlog cannot hit Telegram's
- * 4096-character message limit.
+ * `insertEvents` in M3) is rendered as a block, double-capped at
+ * `MAX_EVENTS_PER_MESSAGE` events and `EVENT_BLOCK_BUDGET` characters, so
+ * no backlog can hit Telegram's 4096-character message limit (an
+ * over-limit message is rejected, and M4's `safeEmit` would then drop the
+ * notification).
  */
 import type {
   CarrierEvent,
@@ -33,6 +35,16 @@ import type { PollNotification } from "../poller/loop.js";
 
 /** A bundled message shows at most this many new events, then a tail line. */
 export const MAX_EVENTS_PER_MESSAGE = 20;
+
+/** Telegram's hard limit for a single message (characters). */
+const TELEGRAM_MESSAGE_LIMIT = 4096;
+
+/**
+ * Character budget for the event ✦ block: the hard limit minus headroom for
+ * the lines outside the block (AWB header, terminal header/footer, ETA line —
+ * every field is capped at the parser, so the rest never exceeds ~256 chars).
+ */
+const EVENT_BLOCK_BUDGET = TELEGRAM_MESSAGE_LIMIT - 256;
 
 const IST_OFFSET_MS = (5 * 60 + 30) * 60_000;
 const MONTHS = [
@@ -128,18 +140,43 @@ const TERMINAL_FALLBACK = { emoji: "⚠️", verdict: "stopped — terminal stat
  * followed by an indented `<location> · <when>` line (either part alone
  * is fine; neither → no detail line). Input order is kept — the feed
  * order the diff (M3 `insertEvents`) returns, newest-first in practice.
+ *
+ * The block is double-capped: `MAX_EVENTS_PER_MESSAGE` events (readability)
+ * AND `EVENT_BLOCK_BUDGET` characters — the count cap alone cannot bound
+ * characters (parse-legal labels/locations run to 200/160 chars each), and
+ * an over-limit message is rejected by Telegram, so M4's `safeEmit` would
+ * silently drop the notification. Events cut by either cap are counted in
+ * the `… and N more` tail.
  */
 function eventLines(events: readonly CarrierEvent[], now: Date): string[] {
-  const lines: string[] = [];
-  for (const ev of events.slice(0, MAX_EVENTS_PER_MESSAGE)) {
-    lines.push(`✦ ${mdv2Escape(ev.description)}`);
+  const blocks = events.map((ev): string[] => {
     const when = formatWhen(ev.occurredAt, now);
     const where = ev.location !== null ? mdv2Escape(ev.location) : null;
-    if (where !== null && when !== null) lines.push(`  ${where} · ${when}`);
-    else if (where !== null) lines.push(`  ${where}`);
-    else if (when !== null) lines.push(`  ${when}`);
+    const block = [`✦ ${mdv2Escape(ev.description)}`];
+    if (where !== null && when !== null) block.push(`  ${where} · ${when}`);
+    else if (where !== null) block.push(`  ${where}`);
+    else if (when !== null) block.push(`  ${when}`);
+    return block;
+  });
+  const blockLen = (block: string[]): number => block.join("\n").length;
+  const tailLen = (n: number): number => `… and ${n} more`.length;
+
+  const lines: string[] = [];
+  let used = 0; // length of lines.join("\n") so far
+  let shown = 0;
+  for (const block of blocks) {
+    if (shown >= MAX_EVENTS_PER_MESSAGE) break;
+    const remaining = blocks.length - shown - 1;
+    const cost =
+      (used === 0 ? 0 : 1) + // separator before this block (none for the first)
+      blockLen(block) +
+      (remaining > 0 ? 1 + tailLen(remaining) : 0); // space reserved for the tail
+    if (used + cost > EVENT_BLOCK_BUDGET && lines.length > 0) break;
+    lines.push(...block);
+    used += (used === 0 ? 0 : 1) + blockLen(block);
+    shown += 1;
   }
-  const extra = events.length - MAX_EVENTS_PER_MESSAGE;
+  const extra = events.length - shown;
   if (extra > 0) lines.push(`… and ${extra} more`);
   return lines;
 }
